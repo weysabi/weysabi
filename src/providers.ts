@@ -4,12 +4,13 @@ import type {
   StreamChunk,
   CircuitBreakerState,
   ResolvedSabiOptions,
+  HandlerMessage,
 } from "./types";
 import { ProviderRequestError, CircuitBreakerOpenError } from "./errors";
 import { createModuleLogger } from "./logger";
 import type { Catalog } from "@joinremba/catalog";
 import { tryParseJSON } from "./utils";
-import type { ProviderHandler } from "./providers/handler";
+import type { ProviderHandler, ToolDefInfo } from "./providers/handler";
 import { openaiHandler } from "./providers/openai";
 import { anthropicHandler } from "./providers/anthropic";
 import { googleHandler } from "./providers/google";
@@ -55,7 +56,7 @@ export class ProviderClient {
 
   async complete(
     modelId: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: HandlerMessage[],
     params: {
       temperature?: number;
       maxTokens?: number;
@@ -63,6 +64,8 @@ export class ProviderClient {
       stop?: string | string[];
       timeout: number;
       responseFormat?: Record<string, unknown>;
+      tools?: ToolDefInfo[];
+      toolChoice?: string;
     }
   ): Promise<ProviderCallResult> {
     this.checkCircuitBreaker();
@@ -169,7 +172,7 @@ export class ProviderClient {
 
   private async executeRequest(
     modelId: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: HandlerMessage[],
     params: {
       temperature?: number;
       maxTokens?: number;
@@ -177,6 +180,8 @@ export class ProviderClient {
       stop?: string | string[];
       timeout: number;
       responseFormat?: Record<string, unknown>;
+      tools?: ToolDefInfo[];
+      toolChoice?: string;
     }
   ): Promise<ProviderCallResult> {
     const url = this.handler.buildUrl(this.baseUrl, modelId);
@@ -287,7 +292,7 @@ export class ProviderClient {
 
   async stream(
     modelId: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: HandlerMessage[],
     params: {
       temperature?: number;
       maxTokens?: number;

@@ -1,14 +1,43 @@
 import { z } from "zod";
 import type { ModelPricing } from "./pricing";
 
-export const MessageRoleSchema = z.enum(["system", "user", "assistant"]);
+export const MessageRoleSchema = z.enum(["system", "user", "assistant", "tool"]);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
 
 export const MessageSchema = z.object({
-  role: MessageRoleSchema,
-  content: z.string(),
+  role: z.string(),
+  content: z.string().nullable(),
 });
 export type Message = z.infer<typeof MessageSchema>;
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute: (args: unknown) => Promise<string> | string;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export type ToolChoice = "auto" | "required" | "none";
+
+export interface ToolCallMessage {
+  role: "assistant";
+  content: string;
+  tool_calls: ToolCall[];
+}
+
+export interface ToolResultMessage {
+  role: "tool";
+  tool_call_id: string;
+  content: string;
+}
+
+export type HandlerMessage = Message | ToolCallMessage | ToolResultMessage;
 
 export const ProviderConfigSchema = z.object({
   apiKey: z.string().min(1),
@@ -72,6 +101,13 @@ export function resolveSabiOptions(raw: SabiOptions): ResolvedSabiOptions {
   };
 }
 
+const ToolDefinitionSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+  execute: z.any(),
+});
+
 export const CompleteRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(MessageSchema).min(1).optional(),
@@ -84,6 +120,9 @@ export const CompleteRequestSchema = z.object({
   stop: z.union([z.string(), z.array(z.string())]).optional(),
   schema: z.any().optional(),
   schemaMaxRetries: z.number().int().min(0).max(10).optional(),
+  tools: z.array(ToolDefinitionSchema).optional(),
+  toolChoice: z.enum(["auto", "required", "none"]).optional(),
+  maxToolCalls: z.number().int().min(1).max(100).optional(),
 });
 export type CompleteRequest = z.input<typeof CompleteRequestSchema>;
 
@@ -103,6 +142,7 @@ export interface CompleteResponse<T = unknown> {
 
 export interface ProviderCallResult {
   content: string;
+  tool_calls?: ToolCall[];
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -120,6 +160,7 @@ export const StreamRequestSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   topP: z.number().min(0).max(1).optional(),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
+  tools: z.array(ToolDefinitionSchema).optional(),
 });
 export type StreamRequest = z.input<typeof StreamRequestSchema>;
 

@@ -7,6 +7,8 @@ import type {
   StreamRequest,
   StreamChunk,
   Message,
+  ToolDefinition,
+  HandlerMessage,
 } from "./types";
 import {
   ProviderConfigSchema,
@@ -22,6 +24,7 @@ import { parseModel, tryParseJSON } from "./utils";
 import { createModuleLogger } from "./logger";
 import { estimateCost } from "./pricing";
 import type { Catalog } from "@joinremba/catalog";
+import type { ToolDefInfo } from "./providers/handler";
 import {
   SabiError,
   AllModelsFailedError,
@@ -31,6 +34,8 @@ import {
   MissingPromptInputError,
   ProviderRequestError,
   SchemaValidationError,
+  ToolExecutionError,
+  MaxToolCallsExceededError,
 } from "./errors";
 
 export { readStream } from "./stream";
@@ -44,6 +49,10 @@ export type {
   StreamChunk,
   Message,
   ResolvedSabiOptions,
+  ToolDefinition,
+  ToolCall,
+  ToolChoice,
+  HandlerMessage,
 } from "./types";
 
 export type {
@@ -63,10 +72,14 @@ export {
   MissingPromptInputError,
   ProviderRequestError,
   SchemaValidationError,
+  ToolExecutionError,
+  MaxToolCallsExceededError,
 };
 
 export { estimateCost, addPricing } from "./pricing";
 export type { ModelPricing } from "./pricing";
+
+export { zodToJsonSchema } from "./utils";
 
 export interface Sabi {
   prompt(name: string, template: string): void;
@@ -109,12 +122,23 @@ class SabiImpl implements Sabi {
 
   async complete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
     const parsed = CompleteRequestSchema.parse(request);
-    const messages = this.resolveMessages(parsed);
+    const messages: HandlerMessage[] = this.resolveMessages(parsed);
     const models = [parsed.model, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
     const schema = parsed.schema as z.ZodType<T> | undefined;
     const maxRetries = parsed.schemaMaxRetries ?? 1;
     const hooks = this.opts.telemetry;
+
+    const rawTools = parsed.tools as ToolDefinition[] | undefined;
+    const tools: ToolDefInfo[] | undefined = rawTools?.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    }));
+    const toolMap: Map<string, (args: unknown) => Promise<string> | string> | undefined = rawTools
+      ? new Map(rawTools.map((t) => [t.name, t.execute]))
+      : undefined;
+    const maxToolCalls = parsed.maxToolCalls ?? 10;
 
     let systemMessage: Message | undefined;
     if (schema !== undefined) {
@@ -138,46 +162,73 @@ class SabiImpl implements Sabi {
         continue;
       }
 
-      const modelMessages = systemMessage ? [systemMessage, ...messages] : messages;
+      const modelMessages: HandlerMessage[] = systemMessage
+        ? [systemMessage, ...messages]
+        : [...messages];
+      let toolCallCount = 0;
+      let toolLoopDone = false;
 
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          const start = performance.now();
-          const result = await client.complete(modelId, modelMessages, {
-            temperature: parsed.temperature,
-            maxTokens: parsed.maxTokens,
-            topP: parsed.topP,
-            stop: parsed.stop,
-            timeout: this.opts.timeout,
-            responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
-          });
-          const latencyMs = performance.now() - start;
-          const cost = estimateCost(modelId, result.usage, this.opts.pricing);
+      while (!toolLoopDone && toolCallCount <= maxToolCalls) {
+        let didToolCall = false;
 
-          if (schema === undefined) {
-            this.log.info({
-              message: `Completed via ${provider}/${modelId}`,
-              model: fullModel,
-              provider,
-              latencyMs,
-              tokens: result.usage?.totalTokens,
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const start = performance.now();
+            const result = await client.complete(modelId, modelMessages, {
+              temperature: parsed.temperature,
+              maxTokens: parsed.maxTokens,
+              topP: parsed.topP,
+              stop: parsed.stop,
+              timeout: this.opts.timeout,
+              responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
+              tools,
+              toolChoice: parsed.toolChoice,
             });
-            return {
-              content: result.content,
-              model: fullModel,
-              provider,
-              usage: result.usage,
-              latencyMs,
-              estimatedCostUsd: cost,
-            } as CompleteResponse<T>;
-          }
+            const latencyMs = performance.now() - start;
+            const cost = estimateCost(modelId, result.usage, this.opts.pricing);
 
-          const raw = result.content;
-          const parsedJson = tryParseJSON<T>(raw);
+            if (result.tool_calls && result.tool_calls.length > 0 && toolMap) {
+              if (toolCallCount >= maxToolCalls) {
+                throw new MaxToolCallsExceededError(maxToolCalls);
+              }
 
-          if (parsedJson !== null) {
-            try {
-              const parsedData = schema.parse(parsedJson);
+              modelMessages.push({
+                role: "assistant",
+                content: result.content,
+                tool_calls: result.tool_calls,
+              } as HandlerMessage);
+
+              for (const tc of result.tool_calls) {
+                const execute = toolMap.get(tc.name);
+                if (!execute) {
+                  modelMessages.push({
+                    role: "tool",
+                    tool_call_id: tc.id,
+                    content: `Error: Tool "${tc.name}" not found`,
+                  } as HandlerMessage);
+                  continue;
+                }
+
+                let output: string;
+                try {
+                  const args = tryParseJSON(tc.arguments);
+                  output = await execute(args);
+                } catch (execErr) {
+                  output = execErr instanceof Error ? execErr.message : String(execErr);
+                }
+                modelMessages.push({
+                  role: "tool",
+                  tool_call_id: tc.id,
+                  content: output,
+                } as HandlerMessage);
+              }
+
+              toolCallCount++;
+              didToolCall = true;
+              break;
+            }
+
+            if (schema === undefined) {
               this.log.info({
                 message: `Completed via ${provider}/${modelId}`,
                 model: fullModel,
@@ -186,63 +237,91 @@ class SabiImpl implements Sabi {
                 tokens: result.usage?.totalTokens,
               });
               return {
-                content: raw,
-                parsed: parsedData,
+                content: result.content,
                 model: fullModel,
                 provider,
                 usage: result.usage,
                 latencyMs,
                 estimatedCostUsd: cost,
               } as CompleteResponse<T>;
-            } catch (parseErr) {
-              const validationError =
-                parseErr instanceof z.ZodError ? parseErr : new z.ZodError([]);
-              if (attempt < maxRetries) {
-                const feedback = `Your previous response was not valid for the expected schema.\nErrors:\n${validationError.issues.map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`).join("\n")}\n\nRespond with ONLY valid JSON matching the schema.`;
-                modelMessages.push({ role: "assistant", content: raw });
-                modelMessages.push({ role: "user", content: feedback });
-                continue;
-              }
-              throw new SchemaValidationError(raw, parseErr);
             }
-          }
 
-          if (attempt < maxRetries) {
-            modelMessages.push({ role: "assistant", content: raw });
-            modelMessages.push({
-              role: "user",
-              content: "Your response was not valid JSON. Respond with ONLY valid JSON.",
-            });
-            continue;
-          }
+            const raw = result.content;
+            const parsedJson = tryParseJSON<T>(raw);
 
-          throw new SchemaValidationError(raw, new Error("Response was not valid JSON"));
-        } catch (err) {
-          if (err instanceof SchemaValidationError) throw err;
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          const modelIndex = models.indexOf(fullModel);
-          const remainingFallbacks = models.slice(modelIndex + 1).length;
+            if (parsedJson !== null) {
+              try {
+                const parsedData = schema.parse(parsedJson);
+                this.log.info({
+                  message: `Completed via ${provider}/${modelId}`,
+                  model: fullModel,
+                  provider,
+                  latencyMs,
+                  tokens: result.usage?.totalTokens,
+                });
+                return {
+                  content: raw,
+                  parsed: parsedData,
+                  model: fullModel,
+                  provider,
+                  usage: result.usage,
+                  latencyMs,
+                  estimatedCostUsd: cost,
+                } as CompleteResponse<T>;
+              } catch (parseErr) {
+                const validationError =
+                  parseErr instanceof z.ZodError ? parseErr : new z.ZodError([]);
+                if (attempt < maxRetries) {
+                  const feedback = `Your previous response was not valid for the expected schema.\nErrors:\n${validationError.issues.map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`).join("\n")}\n\nRespond with ONLY valid JSON matching the schema.`;
+                  modelMessages.push({ role: "assistant" as const, content: raw });
+                  modelMessages.push({ role: "user" as const, content: feedback });
+                  continue;
+                }
+                throw new SchemaValidationError(raw, parseErr);
+              }
+            }
 
-          this.log.warn({
-            message: `Failing over from ${fullModel}`,
-            model: fullModel,
-            error: errorMessage,
-            remainingFallbacks,
-          });
+            if (attempt < maxRetries) {
+              modelMessages.push({ role: "assistant" as const, content: raw });
+              modelMessages.push({
+                role: "user" as const,
+                content: "Your response was not valid JSON. Respond with ONLY valid JSON.",
+              });
+              continue;
+            }
 
-          const nextModel = models[modelIndex + 1];
-          if (nextModel !== undefined) {
-            hooks?.onFallback?.({
-              from: fullModel,
-              to: nextModel,
+            throw new SchemaValidationError(raw, new Error("Response was not valid JSON"));
+          } catch (err) {
+            if (err instanceof SchemaValidationError) throw err;
+            if (err instanceof MaxToolCallsExceededError) throw err;
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            const modelIndex = models.indexOf(fullModel);
+            const remainingFallbacks = models.slice(modelIndex + 1).length;
+
+            this.log.warn({
+              message: `Failing over from ${fullModel}`,
+              model: fullModel,
               error: errorMessage,
               remainingFallbacks,
             });
-          }
 
-          errors.push({ model: fullModel, error: errorMessage });
-          break;
+            const nextModel = models[modelIndex + 1];
+            if (nextModel !== undefined) {
+              hooks?.onFallback?.({
+                from: fullModel,
+                to: nextModel,
+                error: errorMessage,
+                remainingFallbacks,
+              });
+            }
+
+            errors.push({ model: fullModel, error: errorMessage });
+            toolLoopDone = true;
+            break;
+          }
         }
+
+        if (!didToolCall) break;
       }
     }
 
@@ -258,6 +337,11 @@ class SabiImpl implements Sabi {
 
   async *stream(request: StreamRequest): AsyncIterable<StreamChunk> {
     const parsed = StreamRequestSchema.parse(request);
+    if (parsed.tools && parsed.tools.length > 0) {
+      throw new SabiError(
+        "Tools are not supported in streaming mode. Use sabi.complete() instead."
+      );
+    }
     const messages = this.resolveMessages(parsed);
     const models = [parsed.model, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];

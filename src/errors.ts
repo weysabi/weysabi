@@ -68,6 +68,26 @@ export class ProviderRequestError extends SabiError {
   }
 }
 
+export class ToolExecutionError extends SabiError {
+  public readonly toolName: string;
+
+  constructor(toolName: string, message: string) {
+    super(`Tool "${toolName}" failed: ${message}`);
+    this.name = "ToolExecutionError";
+    this.toolName = toolName;
+  }
+}
+
+export class MaxToolCallsExceededError extends SabiError {
+  public readonly maxToolCalls: number;
+
+  constructor(maxToolCalls: number) {
+    super(`Max tool call iterations (${maxToolCalls}) exceeded`);
+    this.name = "MaxToolCallsExceededError";
+    this.maxToolCalls = maxToolCalls;
+  }
+}
+
 export class SchemaValidationError extends SabiError {
   public readonly raw: string;
   public readonly issues: Array<{ path: string; message: string }>;
