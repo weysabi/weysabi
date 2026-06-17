@@ -90,7 +90,7 @@ The orchestration layer is the moat. By the time hosted inference launches, user
 
 ### Phase 5 — Distribution (v0.8.0)
 
-- [ ] Vercel AI SDK adapter (`sabi/ai-sdk`) — `LanguageModelV1`-compatible
+- [x] Vercel AI SDK adapter (`sabi/ai-sdk`) — `LanguageModelV3`-compatible, `ProviderV3`
 - [ ] Get listed on `ai-sdk.dev/providers/community-providers`
 - [ ] CLI: `bunx sabi test` — verify provider keys, benchmark latency
 - [ ] Middleware/plugin system — `sabi.use(hook)` for extensions
@@ -192,6 +192,8 @@ Cencori routes through their gateway and charges per token. Sabi is an orchestra
 │   ├── express.ts               # pipe(stream, res)
 │   ├── fastify.ts               # pipe(stream, reply)
 │   ├── logger.ts                # Structured logger
+│   ├── ai-sdk.ts                # Vercel AI SDK adapter (LanguageModelV3)
+│   ├── ai-sdk.test.ts           # AI SDK adapter tests
 │   ├── providers.test.ts        # Provider-specific tests
 │   ├── stream.test.ts           # Streaming tests
 │   └── structured.test.ts       # Structured output tests
