@@ -412,13 +412,13 @@ class SabiImpl implements Sabi {
     throw new AllModelsFailedError(parsed.model, parsed.fallbacks ?? [], errors);
   }
 
-  private resolveMessages(req: CompleteRequest | StreamRequest): Message[] {
+  private resolveMessages(req: CompleteRequest | StreamRequest): HandlerMessage[] {
     if (req.prompt !== undefined) {
       const content = this.prompts.render(req.prompt, req.inputs ?? {});
       return [{ role: "user", content }];
     }
     if (req.messages !== undefined && req.messages.length > 0) {
-      return req.messages;
+      return req.messages as HandlerMessage[];
     }
     throw new SabiError("Either messages or prompt must be provided");
   }
