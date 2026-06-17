@@ -82,6 +82,7 @@ export class ProviderClient {
         await this.sleep(backoff);
       }
 
+      const attemptStart = performance.now();
       hooks?.onAttempt?.({
         model: `${this.name}/${modelId}`,
         provider: this.name,
@@ -91,6 +92,7 @@ export class ProviderClient {
 
       try {
         const result = await this.executeRequest(modelId, messages, params);
+        const attemptLatency = performance.now() - attemptStart;
         this.onSuccess();
         if (attempt > 0) {
           this.log.info({
@@ -102,7 +104,7 @@ export class ProviderClient {
         hooks?.onSuccess?.({
           model: `${this.name}/${modelId}`,
           provider: this.name,
-          latencyMs: 0,
+          latencyMs: attemptLatency,
           usage: result.usage,
           attempt,
         });

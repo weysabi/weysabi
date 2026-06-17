@@ -46,7 +46,13 @@ export type {
   ResolvedSabiOptions,
 } from "./types";
 
-export type { TelemetryHooks, AttemptMetadata, SuccessMetadata, FailureMetadata, FallbackMetadata } from "./types";
+export type {
+  TelemetryHooks,
+  AttemptMetadata,
+  SuccessMetadata,
+  FailureMetadata,
+  FallbackMetadata,
+} from "./types";
 
 export {
   SabiError,
