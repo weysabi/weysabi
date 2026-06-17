@@ -66,6 +66,7 @@ export class ProviderClient {
     }
   ): Promise<ProviderCallResult> {
     this.checkCircuitBreaker();
+    const hooks = this.opts.telemetry;
 
     let lastError: Error | undefined;
 
@@ -81,6 +82,13 @@ export class ProviderClient {
         await this.sleep(backoff);
       }
 
+      hooks?.onAttempt?.({
+        model: `${this.name}/${modelId}`,
+        provider: this.name,
+        attempt,
+        timestamp: Date.now(),
+      });
+
       try {
         const result = await this.executeRequest(modelId, messages, params);
         this.onSuccess();
@@ -91,6 +99,13 @@ export class ProviderClient {
             attempt,
           });
         }
+        hooks?.onSuccess?.({
+          model: `${this.name}/${modelId}`,
+          provider: this.name,
+          latencyMs: 0,
+          usage: result.usage,
+          attempt,
+        });
         return result;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -101,18 +116,48 @@ export class ProviderClient {
           error: lastError.message,
         });
 
+        const isLastAttempt = attempt === this.opts.retry.maxRetries;
+        let willRetry = true;
+
         if (err instanceof ProviderRequestError) {
           const shouldRetry = this.opts.retry.statusCodes.includes(err.statusCode ?? 0);
-          if (!shouldRetry || attempt === this.opts.retry.maxRetries) {
+          if (!shouldRetry || isLastAttempt) {
+            willRetry = false;
             this.onFailure();
+            hooks?.onFailure?.({
+              model: `${this.name}/${modelId}`,
+              provider: this.name,
+              error: lastError.message,
+              attempt,
+              timestamp: Date.now(),
+              willRetry: false,
+            });
             throw lastError;
           }
         } else {
-          if (attempt === this.opts.retry.maxRetries) {
+          if (isLastAttempt) {
+            willRetry = false;
             this.onFailure();
+            hooks?.onFailure?.({
+              model: `${this.name}/${modelId}`,
+              provider: this.name,
+              error: lastError.message,
+              attempt,
+              timestamp: Date.now(),
+              willRetry: false,
+            });
             throw lastError;
           }
         }
+
+        hooks?.onFailure?.({
+          model: `${this.name}/${modelId}`,
+          provider: this.name,
+          error: lastError.message,
+          attempt,
+          timestamp: Date.now(),
+          willRetry,
+        });
       }
     }
 
@@ -250,6 +295,14 @@ export class ProviderClient {
     }
   ): Promise<AsyncIterable<StreamChunk>> {
     this.checkCircuitBreaker();
+    const hooks = this.opts.telemetry;
+
+    hooks?.onAttempt?.({
+      model: `${this.name}/${modelId}`,
+      provider: this.name,
+      attempt: 0,
+      timestamp: Date.now(),
+    });
 
     const url = this.handler.buildUrl(this.baseUrl, modelId);
     const headers = this.handler.buildHeaders(this.apiKey);
@@ -273,6 +326,14 @@ export class ProviderClient {
         const text = await response.text().catch(noop);
         this.onFailure();
         clearTimeout(timeoutId);
+        hooks?.onFailure?.({
+          model: `${this.name}/${modelId}`,
+          provider: this.name,
+          error: text || response.statusText,
+          attempt: 0,
+          timestamp: Date.now(),
+          willRetry: false,
+        });
         throw new ProviderRequestError(
           this.name,
           modelId,
@@ -285,6 +346,14 @@ export class ProviderClient {
       if (!rawReader) {
         this.onFailure();
         clearTimeout(timeoutId);
+        hooks?.onFailure?.({
+          model: `${this.name}/${modelId}`,
+          provider: this.name,
+          error: "Response body is not readable",
+          attempt: 0,
+          timestamp: Date.now(),
+          willRetry: false,
+        });
         throw new ProviderRequestError(
           this.name,
           modelId,
@@ -294,6 +363,12 @@ export class ProviderClient {
       }
 
       this.onSuccess();
+      hooks?.onSuccess?.({
+        model: `${this.name}/${modelId}`,
+        provider: this.name,
+        latencyMs: 0,
+        attempt: 0,
+      });
       return this.parseSSEStream(
         modelId,
         rawReader as ReadableStreamDefaultReader<Uint8Array>,
@@ -303,6 +378,14 @@ export class ProviderClient {
       clearTimeout(timeoutId);
       if (err instanceof ProviderRequestError) throw err;
       if (err instanceof Error && err.name === "AbortError") {
+        hooks?.onFailure?.({
+          model: `${this.name}/${modelId}`,
+          provider: this.name,
+          error: `Stream timed out after ${params.timeout}ms`,
+          attempt: 0,
+          timestamp: Date.now(),
+          willRetry: false,
+        });
         throw new ProviderRequestError(
           this.name,
           modelId,
@@ -310,6 +393,14 @@ export class ProviderClient {
           `Stream timed out after ${params.timeout}ms`
         );
       }
+      hooks?.onFailure?.({
+        model: `${this.name}/${modelId}`,
+        provider: this.name,
+        error: err instanceof Error ? err.message : String(err),
+        attempt: 0,
+        timestamp: Date.now(),
+        willRetry: false,
+      });
       throw new ProviderRequestError(
         this.name,
         modelId,

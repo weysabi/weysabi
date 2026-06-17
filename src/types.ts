@@ -32,6 +32,7 @@ export const SabiOptionsSchema = z.object({
   timeout: z.number().int().optional(),
   retry: RetryOptionsSchema.optional(),
   circuitBreaker: CircuitBreakerOptionsSchema.optional(),
+  telemetry: z.any().optional(),
 });
 export type SabiOptions = z.input<typeof SabiOptionsSchema>;
 
@@ -47,6 +48,7 @@ export interface ResolvedSabiOptions {
     cooldownMs: number;
     windowMs: number;
   };
+  telemetry?: TelemetryHooks;
 }
 
 export function resolveSabiOptions(raw: SabiOptions): ResolvedSabiOptions {
@@ -62,6 +64,7 @@ export function resolveSabiOptions(raw: SabiOptions): ResolvedSabiOptions {
       cooldownMs: raw.circuitBreaker?.cooldownMs ?? 30_000,
       windowMs: raw.circuitBreaker?.windowMs ?? 60_000,
     },
+    telemetry: raw.telemetry as TelemetryHooks | undefined,
   };
 }
 
@@ -90,6 +93,7 @@ export interface CompleteResponse<T = unknown> {
     totalTokens: number;
   };
   latencyMs: number;
+  estimatedCostUsd?: number;
   parsed?: T;
 }
 
@@ -134,4 +138,47 @@ export interface CircuitBreakerState {
 export interface ResolvedModel {
   provider: string;
   modelId: string;
+}
+
+export interface AttemptMetadata {
+  model: string;
+  provider: string;
+  attempt: number;
+  timestamp: number;
+}
+
+export interface SuccessMetadata {
+  model: string;
+  provider: string;
+  latencyMs: number;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  estimatedCostUsd?: number;
+  attempt: number;
+}
+
+export interface FailureMetadata {
+  model: string;
+  provider: string;
+  error: string;
+  attempt: number;
+  timestamp: number;
+  willRetry: boolean;
+}
+
+export interface FallbackMetadata {
+  from: string;
+  to: string;
+  error: string;
+  remainingFallbacks: number;
+}
+
+export interface TelemetryHooks {
+  onAttempt?: (metadata: AttemptMetadata) => void;
+  onSuccess?: (metadata: SuccessMetadata) => void;
+  onFailure?: (metadata: FailureMetadata) => void;
+  onFallback?: (metadata: FallbackMetadata) => void;
 }

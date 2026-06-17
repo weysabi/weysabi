@@ -20,6 +20,7 @@ import { PromptRegistry } from "./prompts";
 import { ProviderClient } from "./providers";
 import { parseModel, tryParseJSON } from "./utils";
 import { createModuleLogger } from "./logger";
+import { estimateCost } from "./pricing";
 import type { Catalog } from "@joinremba/catalog";
 import {
   SabiError,
@@ -43,7 +44,9 @@ export type {
   StreamChunk,
   Message,
   ResolvedSabiOptions,
-};
+} from "./types";
+
+export type { TelemetryHooks, AttemptMetadata, SuccessMetadata, FailureMetadata, FallbackMetadata } from "./types";
 
 export {
   SabiError,
@@ -55,6 +58,8 @@ export {
   ProviderRequestError,
   SchemaValidationError,
 };
+
+export { estimateCost } from "./pricing";
 
 export interface Sabi {
   prompt(name: string, template: string): void;
@@ -102,6 +107,7 @@ class SabiImpl implements Sabi {
     const errors: { model: string; error: string }[] = [];
     const schema = parsed.schema as z.ZodType<T> | undefined;
     const maxRetries = parsed.schemaMaxRetries ?? 1;
+    const hooks = this.opts.telemetry;
 
     let systemMessage: Message | undefined;
     if (schema !== undefined) {
@@ -139,6 +145,7 @@ class SabiImpl implements Sabi {
             responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
           });
           const latencyMs = performance.now() - start;
+          const cost = estimateCost(modelId, result.usage);
 
           if (schema === undefined) {
             this.log.info({
@@ -154,6 +161,7 @@ class SabiImpl implements Sabi {
               provider,
               usage: result.usage,
               latencyMs,
+              estimatedCostUsd: cost,
             } as CompleteResponse<T>;
           }
 
@@ -177,6 +185,7 @@ class SabiImpl implements Sabi {
                 provider,
                 usage: result.usage,
                 latencyMs,
+                estimatedCostUsd: cost,
               } as CompleteResponse<T>;
             } catch (parseErr) {
               const validationError =
@@ -204,12 +213,26 @@ class SabiImpl implements Sabi {
         } catch (err) {
           if (err instanceof SchemaValidationError) throw err;
           const errorMessage = err instanceof Error ? err.message : String(err);
+          const modelIndex = models.indexOf(fullModel);
+          const remainingFallbacks = models.slice(modelIndex + 1).length;
+
           this.log.warn({
             message: `Failing over from ${fullModel}`,
             model: fullModel,
             error: errorMessage,
-            remainingFallbacks: models.slice(models.indexOf(fullModel) + 1).length,
+            remainingFallbacks,
           });
+
+          const nextModel = models[modelIndex + 1];
+          if (nextModel !== undefined) {
+            hooks?.onFallback?.({
+              from: fullModel,
+              to: nextModel,
+              error: errorMessage,
+              remainingFallbacks,
+            });
+          }
+
           errors.push({ model: fullModel, error: errorMessage });
           break;
         }
@@ -231,6 +254,7 @@ class SabiImpl implements Sabi {
     const messages = this.resolveMessages(parsed);
     const models = [parsed.model, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
+    const hooks = this.opts.telemetry;
 
     for (const fullModel of models) {
       const { provider, modelId } = parseModel(fullModel);
@@ -271,6 +295,18 @@ class SabiImpl implements Sabi {
           model: fullModel,
           error: errorMessage,
         });
+
+        const modelIndex = models.indexOf(fullModel);
+        const nextModel = models[modelIndex + 1];
+        if (nextModel !== undefined) {
+          hooks?.onFallback?.({
+            from: fullModel,
+            to: nextModel,
+            error: errorMessage,
+            remainingFallbacks: models.slice(modelIndex + 1).length,
+          });
+        }
+
         errors.push({ model: fullModel, error: errorMessage });
       }
     }

@@ -52,42 +52,39 @@ The orchestration layer is the moat. By the time hosted inference launches, user
 - [x] Retry with exponential backoff (configurable status codes)
 - [x] Provider failover (model → fallbacks array)
 - [x] Zod for runtime validation
-- [x] 19 passing tests
 
-### Phase 1 — Streaming (v0.4.0)
+### Phase 1 — Streaming (Shipped as v0.4.0)
 
-- [ ] `sabi.stream()` returning `AsyncIterable<StreamChunk>`
-- [ ] Support both SSE and raw streaming from providers
-- [ ] `StreamChunk` type: `{ content: string, usage?: Usage, done: boolean }`
-- [ ] Auto-detects provider streaming format (OpenAI-style vs Anthropic-style)
-- [ ] Framework adapters: `sabi/hono`, `sabi/next`, `sabi/express`
-- [ ] Client-side: `sabi.readStream(response.body)` for consuming
+- [x] `sabi.stream()` returning `AsyncIterable<StreamChunk>`
+- [x] Support both SSE and raw streaming from providers
+- [x] `StreamChunk` type: `{ content: string, usage?: Usage, done: boolean }`
+- [x] Auto-detects provider streaming format (OpenAI-style vs Anthropic-style)
+- [x] Framework adapters: `sabi/sse`, `sabi/hono`, `sabi/next`, `sabi/express`, `sabi/fastify`, `sabi/elysia`
+- [x] Client-side: `sabi.readStream(response.body)` for consuming
 
-### Phase 2 — More Providers (v0.5.0)
+### Phase 2 — More Providers (Shipped as v0.4.0)
 
-- [ ] Anthropic provider (Claude API)
-- [ ] Google Gemini provider
-- [ ] Mistral AI provider
-- [ ] Together AI provider
-- [ ] OpenRouter provider
+- [x] Anthropic provider (Claude API) — `src/providers/anthropic.ts`
+- [x] Google Gemini provider — `src/providers/google.ts`
+- [x] OpenAI-compatible handler covers Groq, Nvidia, DeepSeek, OpenRouter, Together via `baseUrl`
+- [ ] Mistral AI provider (dedicated handler)
 - [ ] Ollama provider (local models, zero config)
-- [ ] All providers implement `ProviderClient` interface
 
-### Phase 3 — Structured Output (v0.6.0)
+### Phase 3 — Structured Output (Shipped as v0.4.0)
 
-- [ ] `sabi.structured({ schema: z.ZodType, ... })` — returns typed object
-- [ ] Auto-retry on parse failure (up to 3 attempts)
-- [ ] Falls back to different model if current one can't produce valid JSON
-- [ ] Supports Zod, JSON Schema, raw TS types
-- [ ] Cost-aware: tries cheapest model first, escalates on failure
+- [x] `schema` on `CompleteRequest` — validates with Zod, returns `parsed` on response
+- [x] Auto-retry on parse failure (`schemaMaxRetries`, default 3)
+- [x] `SchemaValidationError` with `.raw` and `.issues`
+- [x] Works with any Zod schema
+- [x] Cost-aware: tries primary model first, uses `fallbacks` on failure
 
-### Phase 4 — Telemetry & Observability (v0.7.0)
+### Phase 4 — Telemetry & Observability (v0.5.0)
 
-- [ ] `onAttempt` callback before each provider attempt
-- [ ] `onSuccess` callback with response + metadata
-- [ ] `onFailure` callback with error + metadata
-- [ ] `onFallback` callback on failover
-- [ ] Cost estimation — `estimatedCostUsd` in every response
+- [x] `onAttempt` callback before each provider attempt
+- [x] `onSuccess` callback with response + metadata
+- [x] `onFailure` callback with error + metadata
+- [x] `onFallback` callback on failover
+- [x] Cost estimation — `estimatedCostUsd` in every response
 - [ ] OpenTelemetry integration pattern
 - [ ] Pluggable cache adapter (in-memory default, BYO Redis)
 
@@ -175,24 +172,29 @@ Cencori routes through their gateway and charges per token. Sabi is an orchestra
 ```
 @weysabi/sabi/
 ├── src/
-│   ├── index.ts          # createSabi() entry
-│   ├── index.test.ts     # Core tests
-│   ├── types.ts          # Zod schemas + TS types
-│   ├── errors.ts         # Error classes
-│   ├── utils.ts          # parseModel, etc.
-│   ├── providers.ts      # ProviderClient (retry, circuit breaker, fetch)
-│   ├── prompts.ts        # PromptRegistry (templates with {variable})
+│   ├── index.ts                 # SabiImpl class + createSabi() factory
+│   ├── index.test.ts            # Core tests
+│   ├── types.ts                 # Zod schemas + TS types
+│   ├── errors.ts                # Error classes (7 total)
+│   ├── utils.ts                 # parseModel, tryParseJSON
+│   ├── providers.ts             # ProviderClient (handler dispatch, retry, circuit breaker)
 │   ├── providers/
-│   │   ├── anthropic.ts  # Anthropic provider (future)
-│   │   ├── gemini.ts     # Google Gemini (future)
-│   │   └── ...
-│   ├── structured.ts     # Structured output (future)
-│   ├── cache.ts          # Pluggable cache (future)
-│   ├── telemetry.ts      # Telemetry hooks (future)
-│   └── adapters/
-│       ├── hono.ts       # sabi/hono (future)
-│       ├── next.ts       # sabi/next (future)
-│       └── express.ts    # sabi/express (future)
+│   │   ├── handler.ts           # ProviderHandler interface
+│   │   ├── openai.ts            # OpenAI-compatible (Groq, Nvidia, DeepSeek, etc.)
+│   │   ├── anthropic.ts         # Anthropic Messages API handler
+│   │   └── google.ts            # Google Gemini handler
+│   ├── prompts.ts               # PromptRegistry (templates with {variable})
+│   ├── sse.ts                   # Generic toResponse() for Web Fetch frameworks
+│   ├── stream.ts                # Client-side readStream helper
+│   ├── hono.ts                  # Re-exports SSE
+│   ├── next.ts                  # Re-exports SSE
+│   ├── elysia.ts                # Re-exports SSE
+│   ├── express.ts               # pipe(stream, res)
+│   ├── fastify.ts               # pipe(stream, reply)
+│   ├── logger.ts                # Structured logger
+│   ├── providers.test.ts        # Provider-specific tests
+│   ├── stream.test.ts           # Streaming tests
+│   └── structured.test.ts       # Structured output tests
 ├── package.json
 ├── tsconfig.json
 ├── bunfig.toml
