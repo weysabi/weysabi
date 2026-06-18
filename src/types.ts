@@ -4,10 +4,12 @@ import type { ModelPricing } from "./pricing";
 export const MessageRoleSchema = z.enum(["system", "user", "assistant", "tool"]);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
 
-export const MessageSchema = z.object({
-  role: z.string(),
-  content: z.string().nullable(),
-}).passthrough();
+export const MessageSchema = z
+  .object({
+    role: z.string(),
+    content: z.string().nullable(),
+  })
+  .passthrough();
 export type Message = z.infer<typeof MessageSchema>;
 
 export interface ToolDefinition {

@@ -68,9 +68,7 @@ describe("createSabiProvider", () => {
     const sabi = createSabi({ groq: { apiKey: "gsk_abc" } });
     const provider = createSabiProvider(sabi);
 
-    expect(() => provider.languageModel("invalid")).toThrow(
-      /expected "provider\/model"/i
-    );
+    expect(() => provider.languageModel("invalid")).toThrow(/expected "provider\/model"/i);
   });
 });
 
@@ -286,10 +284,14 @@ describe("SabiLanguageModel.doStream", () => {
     const result = await model.doStream({ prompt });
     const parts: LanguageModelV3StreamPart[] = [];
     const reader = result.stream.getReader();
+    let streamDone = false;
 
-    while (true) {
+    while (!streamDone) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        streamDone = true;
+        break;
+      }
       parts.push(value);
     }
 
@@ -306,7 +308,10 @@ describe("SabiLanguageModel.doStream", () => {
     expect(textDelta?.delta).toBe("Hello");
 
     const finish = parts.find((p) => p.type === "finish") as
-      | { type: "finish"; usage: { inputTokens: { total: number }; outputTokens: { total: number } } }
+      | {
+          type: "finish";
+          usage: { inputTokens: { total: number }; outputTokens: { total: number } };
+        }
       | undefined;
     expect(finish?.usage.inputTokens.total).toBe(5);
     expect(finish?.usage.outputTokens.total).toBe(10);
@@ -333,10 +338,14 @@ describe("SabiLanguageModel.doStream", () => {
     const result = await model.doStream({ prompt });
     const deltas: string[] = [];
     const reader = result.stream.getReader();
+    let streamDone = false;
 
-    while (true) {
+    while (!streamDone) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        streamDone = true;
+        break;
+      }
       if (value.type === "text-delta") {
         deltas.push(value.delta);
       }
@@ -382,10 +391,13 @@ describe("SabiLanguageModel.doStream", () => {
 
     const result = await model.doStream({ prompt });
     const reader = result.stream.getReader();
-    while (true) {
+    let streamDone = false;
+    while (!streamDone) {
       const { done, value } = await reader.read();
-      if (done) break;
-      if (value.type === "finish") break;
+      if (done || value.type === "finish") {
+        streamDone = true;
+        break;
+      }
     }
 
     const body = sentBody as Record<string, unknown>;

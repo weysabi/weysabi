@@ -1,4 +1,4 @@
-import type { Sabi, Message, HandlerMessage, ToolCall } from "./index";
+import type { Sabi, Message } from "./index";
 import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
@@ -7,9 +7,7 @@ import type {
   LanguageModelV3Prompt,
   LanguageModelV3TextPart,
   LanguageModelV3ToolCallPart,
-  LanguageModelV3ToolResultPart,
   LanguageModelV3Text,
-  LanguageModelV3FinishReason,
   LanguageModelV3Usage,
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
@@ -28,9 +26,7 @@ export function createSabiProvider(sabi: Sabi): ProviderV3 {
       );
     },
     imageModel(_modelId: string): never {
-      throw new SabiError(
-        "Image models are not supported in the AI SDK adapter."
-      );
+      throw new SabiError("Image models are not supported in the AI SDK adapter.");
     },
   };
 }
@@ -119,7 +115,7 @@ export class SabiLanguageModel implements LanguageModelV3 {
 
     const stream = new ReadableStream<LanguageModelV3StreamPart>({
       async start(controller) {
-        let textId = "0";
+        const textId = "0";
         let hasTextStarted = false;
 
         controller.enqueue({ type: "stream-start", warnings: [] });
@@ -213,9 +209,7 @@ function convertV3Prompt(prompt: LanguageModelV3Prompt): Message[] {
         const part = msg.content[0];
         if (part?.type === "tool-result") {
           const content =
-            typeof part.output === "string"
-              ? part.output
-              : JSON.stringify(part.output);
+            typeof part.output === "string" ? part.output : JSON.stringify(part.output);
           return {
             role: "tool",
             tool_call_id: part.toolCallId,

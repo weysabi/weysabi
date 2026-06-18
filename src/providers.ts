@@ -14,12 +14,16 @@ import type { ProviderHandler, ToolDefInfo } from "./providers/handler";
 import { openaiHandler } from "./providers/openai";
 import { anthropicHandler } from "./providers/anthropic";
 import { googleHandler } from "./providers/google";
+import { mistralHandler } from "./providers/mistral";
+import { ollamaHandler } from "./providers/ollama";
 
 function noop(): void {}
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
   anthropic: "https://api.anthropic.com",
   google: "https://generativelanguage.googleapis.com",
+  mistral: "https://api.mistral.ai/v1",
+  ollama: "http://localhost:11434",
 };
 
 function getDefaultBaseUrl(name: string): string {
@@ -29,6 +33,8 @@ function getDefaultBaseUrl(name: string): string {
 function getHandler(name: string): ProviderHandler {
   if (name === "anthropic") return anthropicHandler;
   if (name === "google") return googleHandler;
+  if (name === "mistral") return mistralHandler;
+  if (name === "ollama") return ollamaHandler;
   return openaiHandler;
 }
 
