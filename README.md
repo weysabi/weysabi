@@ -40,9 +40,16 @@ const result = await sabi.complete({
 | Client-side `readStream` helper                                        | ✅     |
 | Structured output (Zod schemas)                                        | ✅     |
 | Framework adapters (Hono, Next, Express, Fastify, Elysia, generic SSE) | ✅     |
-| Telemetry hooks (latency, cost, errors)                                | 🔜     |
+| Tool calling (auto-execute + chaining)                                 | ✅     |
+| Telemetry hooks (latency, cost, errors, fallback)                      | ✅     |
+| Cost estimation (per-response `estimatedCostUsd`)                      | ✅     |
+| Plugin system (`sabi.use()` lifecycle hooks)                           | ✅     |
+| Cache adapter (`InMemoryCache`, `RedisCache`, BYO)                     | ✅     |
+| OpenTelemetry integration (`sabi/otel`)                                | ✅     |
+| Vercel AI SDK adapter (`sabi/ai-sdk`)                                  | ✅     |
+| Mistral + Ollama providers                                             | ✅     |
+| CLI (`sabi init`, `complete`, `stream`, `config`, `prompt`, etc.)      | ✅     |
 | RAG (zero-config, local or cloud)                                      | 🔜     |
-| Tool calling                                                           | 🔜     |
 | Memory & conversations                                                 | 🔜     |
 | Guardrails (PII, content filter)                                       | 🔜     |
 | Eval suites                                                            | 🔜     |
@@ -181,6 +188,81 @@ app.post("/chat", async (req, reply) => {
 });
 ```
 
+## CLI
+
+```bash
+# Quick start
+bun sabi init                          # Interactive setup
+bun sabi config validate               # Test all provider keys
+bun sabi complete "Hello" -m groq/llama-4-scout
+bun sabi stream "Tell me a story" -m openai/gpt-4o-mini
+bun sabi prompt list|add|rm            # Manage prompt templates
+bun sabi benchmark                     # Latency comparison (3 runs/provider)
+bun sabi doctor                        # System diagnostics
+```
+
+Config is read from `sabi.json`, `~/.config/sabi/config.json`, or `SABI_*_API_KEY` env vars.
+
+## Plugin System
+
+```ts
+const sabi = createSabi({ groq: { apiKey } });
+
+sabi.use({
+  name: "logger",
+  onCompleteRequest(req) {
+    console.log("Sending:", req.model);
+    return req;
+  },
+  onCompleteResponse(res, req) {
+    console.log("Got response:", res.latencyMs, "ms");
+    return res;
+  },
+  onError(err, { request }) {
+    console.error("Failed:", err.message);
+  },
+});
+```
+
+## Caching
+
+```ts
+import { InMemoryCache, RedisCache } from "@weysabi/sabi/cache";
+// or: import { cacheKey } from "@weysabi/sabi";
+
+// In-memory
+const sabi = createSabi(providers, { cache: new InMemoryCache(60_000) });
+
+// Redis (any Redis-like client)
+const sabi = createSabi(providers, {
+  cache: new RedisCache(new Redis(), 60_000),
+});
+
+// BYO — implement { get(key), set(key, value, ttlMs?) }
+```
+
+## OpenTelemetry
+
+```ts
+import { createOtelPlugin } from "@weysabi/sabi/otel";
+import { trace } from "@opentelemetry/api";
+
+const sabi = createSabi(providers);
+sabi.use(createOtelPlugin({ tracer: trace.getTracer("my-app") }));
+```
+
+## Vercel AI SDK Adapter
+
+```ts
+import { createSabiProvider } from "@weysabi/sabi/ai-sdk";
+
+const provider = createSabiProvider(sabi);
+const result = await generateText({
+  model: provider.languageModel("groq/llama-4-scout"),
+  prompt: "Hello",
+});
+```
+
 ## Sub-path Exports
 
 ```ts
@@ -188,6 +270,9 @@ import { createSabi } from "@weysabi/sabi";
 import { SabiError, SchemaValidationError } from "@weysabi/sabi/errors";
 import { toResponse } from "@weysabi/sabi/sse";
 import { pipe } from "@weysabi/sabi/express";
+import { InMemoryCache, RedisCache } from "@weysabi/sabi/cache";
+import { createOtelPlugin } from "@weysabi/sabi/otel";
+import { createSabiProvider } from "@weysabi/sabi/ai-sdk";
 ```
 
 ## Philosophy
