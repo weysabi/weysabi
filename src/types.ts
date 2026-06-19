@@ -67,6 +67,7 @@ export const SabiOptionsSchema = z.object({
   telemetry: z.any().optional(),
   pricing: z.any().optional(),
   cache: z.any().optional(),
+  rag: z.any().optional(),
 });
 export type SabiOptions = z.input<typeof SabiOptionsSchema>;
 
@@ -128,6 +129,7 @@ export const CompleteRequestSchema = z.object({
   tools: z.array(ToolDefinitionSchema).optional(),
   toolChoice: z.enum(["auto", "required", "none"]).optional(),
   maxToolCalls: z.number().int().min(1).max(100).optional(),
+  rag: z.boolean().optional(),
 });
 export type CompleteRequest = z.input<typeof CompleteRequestSchema>;
 

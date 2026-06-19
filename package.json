@@ -63,6 +63,11 @@
       "types": "./src/cache.ts",
       "import": "./src/cache.ts",
       "default": "./src/cache.ts"
+    },
+    "./rag": {
+      "types": "./src/rag/index.ts",
+      "import": "./src/rag/index.ts",
+      "default": "./src/rag/index.ts"
     }
   },
   "files": [

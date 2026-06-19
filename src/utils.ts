@@ -11,6 +11,16 @@ export function parseModel(full: string): { provider: string; modelId: string } 
   };
 }
 
+export function generateId(length: number = 16): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i]! % chars.length];
+  }
+  return result;
+}
+
 export function tryParseJSON<T = Record<string, unknown>>(text: string): T | null {
   try {
     return JSON.parse(text) as T;

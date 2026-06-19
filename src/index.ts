@@ -27,6 +27,7 @@ import { createModuleLogger } from "./logger";
 import { estimateCost } from "./pricing";
 import type { Catalog } from "@joinremba/catalog";
 import type { ToolDefInfo } from "./providers/handler";
+import { RagEngine } from "./rag/engine";
 import {
   SabiError,
   AllModelsFailedError,
@@ -69,6 +70,7 @@ export type { SabiPlugin, CacheAdapter } from "./types";
 export { cacheKey } from "./types";
 export { InMemoryCache, RedisCache } from "./cache";
 export type { RedisLikeClient } from "./cache";
+export { RagEngine } from "./rag/engine";
 
 export {
   SabiError,
@@ -95,6 +97,7 @@ export interface Sabi {
   complete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>>;
   stream(request: StreamRequest): AsyncIterable<StreamChunk>;
   use(plugin: SabiPlugin): void;
+  rag: RagEngine;
 }
 
 class SabiImpl implements Sabi {
@@ -103,17 +106,41 @@ class SabiImpl implements Sabi {
   private opts: ResolvedSabiOptions;
   private readonly log: Catalog;
   private plugins: SabiPlugin[] = [];
+  rag: RagEngine;
 
   constructor(providers: Record<string, ProviderConfig>, options: SabiOptions = {}) {
     SabiOptionsSchema.parse(options);
     this.opts = resolveSabiOptions(options);
     this.log = createModuleLogger("sabi");
     this.providers = new Map();
+    this.rag = new RagEngine(options.rag as Record<string, unknown> | undefined);
+
     for (const [name, config] of Object.entries(providers)) {
       const validated = ProviderConfigSchema.parse(config);
       this.providers.set(name, new ProviderClient(name, validated, this.opts));
     }
     this.prompts = new PromptRegistry(options.prompts);
+
+    this.setupRagProvider(providers);
+  }
+
+  private setupRagProvider(providers: Record<string, ProviderConfig>): void {
+    const embeddingModel = this.rag["options"].embeddingModel;
+    const [providerName] = embeddingModel.split("/");
+    if (providerName && providers[providerName]) {
+      this.rag.setProviders(
+        { ...providers[providerName]!, provider: providerName },
+        providers
+      );
+    } else {
+      const first = Object.entries(providers)[0];
+      if (first) {
+        this.rag.setProviders(
+          { ...first[1], provider: first[0] },
+          providers
+        );
+      }
+    }
   }
 
   use(plugin: SabiPlugin): void {
@@ -177,6 +204,30 @@ class SabiImpl implements Sabi {
   private async runComplete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
     const parsed = CompleteRequestSchema.parse(request);
     const messages: HandlerMessage[] = this.resolveMessages(parsed);
+
+    if (parsed.rag) {
+      const queryText = messages.map((m) => ("content" in m ? m.content : "")).filter(Boolean).join("\n");
+      if (queryText) {
+        const results = await this.rag.query(queryText);
+        if (results.length > 0) {
+          const context = results.map((r) => r.content).join("\n\n---\n\n");
+          const hasSystem = messages[0]?.role === "system";
+          const systemMsg: HandlerMessage = {
+            role: "system",
+            content: `Use the following context to answer the user's question:\n\n${context}`,
+          };
+          if (hasSystem) {
+            messages[0] = {
+              role: "system",
+              content: (messages[0] as { content: string }).content + "\n\n" + systemMsg.content,
+            };
+          } else {
+            messages.unshift(systemMsg);
+          }
+        }
+      }
+    }
+
     const models = [parsed.model, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
     const schema = parsed.schema as z.ZodType<T> | undefined;
