@@ -92,7 +92,7 @@ The orchestration layer is the moat. By the time hosted inference launches, user
 
 - [x] Vercel AI SDK adapter (`sabi/ai-sdk`) — `LanguageModelV3`-compatible, `ProviderV3`
 - [ ] Get listed on `ai-sdk.dev/providers/community-providers`
-- [ ] CLI: `bunx sabi test` — verify provider keys, benchmark latency
+- [x] CLI: `bunx sabi <command>` — `init`, `config validate`, `complete`, `stream`, `prompt {list,add,rm}`, `benchmark`, `doctor`
 - [x] Middleware/plugin system — `sabi.use(plugin)` with lifecycle hooks
 
 ### Phase 6 — RAG & Memory (v1.0.0)
@@ -192,6 +192,22 @@ Cencori routes through their gateway and charges per token. Sabi is an orchestra
 │   ├── express.ts               # pipe(stream, res)
 │   ├── fastify.ts               # pipe(stream, reply)
 │   ├── logger.ts                # Structured logger
+│   ├── cache.ts                 # InMemoryCache + RedisCache
+│   ├── cache.test.ts            # Cache tests
+│   ├── otel.ts                  # OpenTelemetry plugin
+│   ├── otel.test.ts             # OTEL plugin tests
+│   ├── plugin.test.ts           # Plugin system tests
+│   ├── cli/
+│   │   ├── index.ts             # CLI entry point (commander)
+│   │   ├── utils.ts             # Config load/save, provider test, table print
+│   │   └── commands/
+│   │       ├── init.ts          # sabi init
+│   │       ├── config.ts        # sabi config validate
+│   │       ├── complete.ts      # sabi complete
+│   │       ├── stream.ts        # sabi stream
+│   │       ├── prompt.ts        # sabi prompt {list,add,rm}
+│   │       ├── benchmark.ts     # sabi benchmark
+│   │       └── doctor.ts        # sabi doctor
 │   ├── ai-sdk.ts                # Vercel AI SDK adapter (LanguageModelV3)
 │   ├── ai-sdk.test.ts           # AI SDK adapter tests
 │   ├── providers.test.ts        # Provider-specific tests
