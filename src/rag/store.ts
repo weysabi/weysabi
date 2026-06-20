@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync, existsSync } from "fs";
 import { dirname, resolve } from "path";
-import type { RagChunk, RagSearchResult } from "./types";
+import type { RagChunk, RagSearchResult, RagQueryFilter } from "./types";
 import type { HnswVectorIndex } from "./vector-index";
 import type { ObjectStore } from "./object-store";
 
@@ -299,31 +299,62 @@ export class RagStore {
 
   async search(
     queryEmbedding: Float32Array,
-    topK: number
+    topK: number,
+    filter?: RagQueryFilter
   ): Promise<RagSearchResult[]> {
     if (this.vectorIndex) {
-      return this.searchViaIndex(queryEmbedding, topK);
+      return this.searchViaIndex(queryEmbedding, topK, filter);
     }
-    return this.searchBruteForce(queryEmbedding, topK);
+    return this.searchBruteForce(queryEmbedding, topK, filter);
+  }
+
+  private buildFilterConditions(filter?: RagQueryFilter): { clause: string; params: Array<string | number> } {
+    if (!filter) return { clause: "", params: [] };
+
+    const conditions: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (filter.path) {
+      conditions.push("f.path = ?");
+      params.push(filter.path);
+    }
+    if (filter.pathPrefix) {
+      const prefix = filter.pathPrefix.endsWith("/") ? filter.pathPrefix : filter.pathPrefix + "/";
+      conditions.push("f.path LIKE ?");
+      params.push(prefix + "%");
+    }
+    if (filter.fileId) {
+      conditions.push("c.file_id = ?");
+      params.push(filter.fileId);
+    }
+
+    return {
+      clause: conditions.length > 0 ? " AND " + conditions.join(" AND ") : "",
+      params,
+    };
   }
 
   private async searchViaIndex(
     queryEmbedding: Float32Array,
-    topK: number
+    topK: number,
+    filter?: RagQueryFilter
   ): Promise<RagSearchResult[]> {
-    const results = this.vectorIndex!.search(queryEmbedding, topK);
+    const oversample = filter ? Math.min(topK * 5, 200) : topK;
+    const results = this.vectorIndex!.search(queryEmbedding, oversample);
     if (results.length === 0) return [];
 
     const ids = results.map((r) => r.id);
     const placeholders = ids.map(() => "?").join(",");
+    const { clause, params } = this.buildFilterConditions(filter);
 
+    const bindings = [...ids, ...params] as [string, ...Array<string | number>];
     const chunkRows = this.db
       .query(
         `SELECT c.id, c.content, f.path as file_path
          FROM chunks c JOIN files f ON c.file_id = f.id
-         WHERE c.id IN (${placeholders})`
+         WHERE c.id IN (${placeholders})${clause}`
       )
-      .all(...ids) as Array<{
+      .all(...bindings) as Array<{
       id: string;
       content: string | null;
       file_path: string;
@@ -348,6 +379,7 @@ export class RagStore {
       }
 
       output.push({ id: r.id, content, filePath: row.file_path, score: r.score });
+      if (output.length >= topK) break;
     }
 
     return output;
@@ -355,13 +387,27 @@ export class RagStore {
 
   private searchBruteForce(
     queryEmbedding: Float32Array,
-    topK: number
+    topK: number,
+    filter?: RagQueryFilter
   ): RagSearchResult[] {
-    const withEmbedding = this.memoryIndex.filter((c) => c.embedding);
-    if (withEmbedding.length === 0) return [];
+    let candidates = this.memoryIndex.filter((c) => c.embedding);
+
+    if (filter) {
+      candidates = candidates.filter((c) => {
+        if (filter.path && c.filePath !== filter.path) return false;
+        if (filter.pathPrefix) {
+          const prefix = filter.pathPrefix.endsWith("/") ? filter.pathPrefix : filter.pathPrefix + "/";
+          if (!c.filePath.startsWith(prefix)) return false;
+        }
+        if (filter.fileId && c.fileId !== filter.fileId) return false;
+        return true;
+      });
+    }
+
+    if (candidates.length === 0) return [];
 
     const scored: Array<RagSearchResult> = [];
-    for (const entry of withEmbedding) {
+    for (const entry of candidates) {
       const score = cosineSimilarity(queryEmbedding, entry.embedding!);
       scored.push({
         id: entry.id,

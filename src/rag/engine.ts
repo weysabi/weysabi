@@ -5,7 +5,7 @@ import { RagStore } from "./store";
 import { splitText } from "./chunker";
 import { embedText, embedBatch } from "./embedder";
 import { loadFile, loadDirectory, loadText, type LoadedFile } from "./loader";
-import type { RagOptions, RagChunk, RagSearchResult, LoadResult } from "./types";
+import type { RagOptions, RagChunk, RagSearchResult, LoadResult, RagQueryFilter } from "./types";
 import type { ProviderConfig } from "../types";
 import { DEFAULT_RAG_OPTIONS } from "./types";
 import { HnswVectorIndex } from "./vector-index";
@@ -149,7 +149,7 @@ export class RagEngine {
     return results;
   }
 
-  async query(question: string, topK?: number): Promise<RagSearchResult[]> {
+  async query(question: string, topK?: number, filter?: RagQueryFilter): Promise<RagSearchResult[]> {
     if (!this.embeddingProvider) {
       throw new Error("RAG: no embedding provider configured.");
     }
@@ -162,7 +162,7 @@ export class RagEngine {
       this.options.embeddingModel
     );
 
-    return this.store.search(embedding, k);
+    return this.store.search(embedding, k, filter);
   }
 
   clear(filePath?: string): void {
