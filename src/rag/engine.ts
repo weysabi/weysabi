@@ -20,6 +20,7 @@ export class RagEngine {
     dbPath: string;
     storeContentInObjectStore: boolean;
     sqlitePragmas?: Record<string, string | number>;
+    embeddingBatchSize: number;
   };
   vectorIndex: HnswVectorIndex | null;
   private embeddingProvider: ProviderConfig & { provider: string } | null = null;
@@ -36,6 +37,7 @@ export class RagEngine {
       topK: options.topK ?? defaults.topK!,
       dbPath: options.dbPath ?? defaults.dbPath!,
       storeContentInObjectStore: options.storeContentInObjectStore ?? defaults.storeContentInObjectStore!,
+      embeddingBatchSize: options.embeddingBatchSize ?? defaults.embeddingBatchSize!,
     } as typeof this.options;
     this.vectorIndex = this.buildVectorIndex();
     this.store = new RagStore({
@@ -130,10 +132,19 @@ export class RagEngine {
       }
 
       const texts = ragChunks.map((c) => c.content);
-      const embeddings = await embedBatch(texts, this.embeddingProvider, this.options.embeddingModel);
+      const batchSize = this.options.embeddingBatchSize;
+      const allEmbeddings: Float32Array[] = [];
+
+      for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize);
+        const results = await embedBatch(batch, this.embeddingProvider, this.options.embeddingModel);
+        for (const r of results) {
+          allEmbeddings.push(r.embedding);
+        }
+      }
 
       for (let i = 0; i < ragChunks.length; i++) {
-        ragChunks[i]!.embedding = embeddings[i]!.embedding;
+        ragChunks[i]!.embedding = allEmbeddings[i]!;
       }
 
       this.store.insertChunks(ragChunks);

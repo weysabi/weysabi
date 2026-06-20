@@ -19,6 +19,7 @@ export interface RagOptions {
   objectStore?: ObjectStore;
   storeContentInObjectStore?: boolean;
   sqlitePragmas?: Record<string, string | number>;
+  embeddingBatchSize?: number;
 }
 
 export interface RagChunk {
@@ -58,4 +59,5 @@ export const DEFAULT_RAG_OPTIONS = {
   topK: 5,
   dbPath: ".sabi/rag.db",
   storeContentInObjectStore: false,
+  embeddingBatchSize: 512,
 } as const;
