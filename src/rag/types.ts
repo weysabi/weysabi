@@ -52,6 +52,16 @@ export interface LoadResult {
   skipped: boolean;
 }
 
+export type LoadProgressEvent =
+  | { type: "start"; total: number }
+  | { type: "file_start"; filePath: string; current: number; total: number }
+  | { type: "chunk"; filePath: string; chunks: number }
+  | { type: "embed"; filePath: string; batch: number; total: number }
+  | { type: "file_done"; filePath: string; fileId: string; chunks: number; current: number; total: number }
+  | { type: "file_skip"; filePath: string; current: number; total: number }
+  | { type: "error"; filePath: string; error: string; current: number; total: number }
+  | { type: "done" };
+
 export const DEFAULT_RAG_OPTIONS = {
   embeddingModel: "openai/text-embedding-3-small",
   chunkSize: 1000,

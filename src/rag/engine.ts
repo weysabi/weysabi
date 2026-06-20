@@ -5,7 +5,7 @@ import { RagStore } from "./store";
 import { splitText } from "./chunker";
 import { embedText, embedBatch } from "./embedder";
 import { loadFile, loadDirectory, loadText, type LoadedFile } from "./loader";
-import type { RagOptions, RagChunk, RagSearchResult, LoadResult, RagQueryFilter } from "./types";
+import type { RagOptions, RagChunk, RagSearchResult, LoadResult, RagQueryFilter, LoadProgressEvent } from "./types";
 import type { ProviderConfig } from "../types";
 import { DEFAULT_RAG_OPTIONS } from "./types";
 import { HnswVectorIndex } from "./vector-index";
@@ -158,6 +158,107 @@ export class RagEngine {
     }
 
     return results;
+  }
+
+  async *loadStream(
+    ...sources: Array<string | { name: string; content: string }>
+  ): AsyncGenerator<LoadProgressEvent, void, undefined> {
+    if (!this.embeddingProvider) {
+      throw new Error("RAG: no embedding provider configured. Call sabi.rag.setProviders() or pass embeddingProvider in options.");
+    }
+
+    const files: LoadedFile[] = [];
+    for (const source of sources) {
+      if (typeof source === "string") {
+        if (existsSync(source) && statSync(source).isDirectory()) {
+          files.push(...loadDirectory(source));
+        } else if (existsSync(source) && statSync(source).isFile()) {
+          files.push(loadFile(source));
+        } else {
+          files.push(loadText(basename(source), source));
+        }
+      } else {
+        files.push(loadText(source.name, source.content));
+      }
+    }
+
+    const total = files.length;
+    yield { type: "start", total };
+
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx]!;
+      const current = idx + 1;
+
+      if (this.store.hasFile(file.path, file.contentHash)) {
+        yield { type: "file_skip", filePath: file.path, current, total };
+        continue;
+      }
+
+      yield { type: "file_start", filePath: file.path, current, total };
+
+      try {
+        const fileId = generateId();
+        this.store.insertFile({
+          id: fileId,
+          path: file.path,
+          contentHash: file.contentHash,
+          createdAt: new Date().toISOString(),
+        });
+
+        const chunks = splitText(file.content, this.options.chunkSize, this.options.chunkOverlap);
+        yield { type: "chunk", filePath: file.path, chunks: chunks.length };
+
+        const ragChunks: RagChunk[] = [];
+        for (let i = 0; i < chunks.length; i++) {
+          ragChunks.push({
+            id: generateId(),
+            fileId,
+            filePath: file.path,
+            chunkIndex: i,
+            content: chunks[i]!.content,
+            tokens: chunks[i]!.tokens,
+          });
+        }
+
+        const texts = ragChunks.map((c) => c.content);
+        const batchSize = this.options.embeddingBatchSize;
+        const allEmbeddings: Float32Array[] = [];
+
+        for (let i = 0; i < texts.length; i += batchSize) {
+          const batch = texts.slice(i, i + batchSize);
+          yield { type: "embed", filePath: file.path, batch: i / batchSize + 1, total: Math.ceil(texts.length / batchSize) };
+          const results = await embedBatch(batch, this.embeddingProvider, this.options.embeddingModel);
+          for (const r of results) {
+            allEmbeddings.push(r.embedding);
+          }
+        }
+
+        for (let i = 0; i < ragChunks.length; i++) {
+          ragChunks[i]!.embedding = allEmbeddings[i]!;
+        }
+
+        this.store.insertChunks(ragChunks);
+
+        yield {
+          type: "file_done",
+          filePath: file.path,
+          fileId,
+          chunks: ragChunks.length,
+          current,
+          total,
+        };
+      } catch (err) {
+        yield {
+          type: "error",
+          filePath: file.path,
+          error: err instanceof Error ? err.message : String(err),
+          current,
+          total,
+        };
+      }
+    }
+
+    yield { type: "done" };
   }
 
   async query(question: string, topK?: number, filter?: RagQueryFilter): Promise<RagSearchResult[]> {
