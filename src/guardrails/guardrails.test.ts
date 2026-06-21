@@ -365,7 +365,9 @@ describe("output token limits", () => {
   it("truncates when action is truncate", async () => {
     setFetch(async () =>
       okResponse({
-        choices: [{ message: { content: "This is a very long response that should be cut short" } }],
+        choices: [
+          { message: { content: "This is a very long response that should be cut short" } },
+        ],
         usage: { prompt_tokens: 10, completion_tokens: 100, total_tokens: 110 },
       })
     );
@@ -632,10 +634,10 @@ describe("moderation API", () => {
       if (url.toString().includes("moderations")) {
         moderationCalls.push("moderation-called");
       }
-      return new Response(
-        JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as typeof globalThis.fetch;
 
     const sabi = createSabi({ groq: { apiKey: "gsk_abc" } });
@@ -658,10 +660,10 @@ describe("moderation API", () => {
       if (url.toString().includes("moderations")) {
         moderationCalls.push("moderation-called");
       }
-      return new Response(
-        JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as typeof globalThis.fetch;
 
     const sabi = createSabi({ groq: { apiKey: "gsk_abc" } });
@@ -688,10 +690,10 @@ describe("moderation API", () => {
         modCallCount++;
         return new Response("Internal Server Error", { status: 500 });
       }
-      return new Response(
-        JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as typeof globalThis.fetch;
 
     const sabi = createSabi({ groq: { apiKey: "gsk_abc" } });
@@ -719,7 +721,9 @@ describe("moderation API", () => {
         modCallCount++;
         return new Response(
           JSON.stringify({
-            results: [{ flagged: true, categories: { hate: true }, category_scores: { hate: 0.95 } }],
+            results: [
+              { flagged: true, categories: { hate: true }, category_scores: { hate: 0.95 } },
+            ],
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );

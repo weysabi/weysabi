@@ -189,7 +189,10 @@ export function createGuardrails(config: GuardrailsConfig): SabiPlugin {
       return request;
     },
 
-    async onCompleteResponse(response: CompleteResponse, _request: CompleteRequest): Promise<CompleteResponse> {
+    async onCompleteResponse(
+      response: CompleteResponse,
+      _request: CompleteRequest
+    ): Promise<CompleteResponse> {
       if (!parsed.output) return response;
 
       const matches: GuardrailMatch[] = [];

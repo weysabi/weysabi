@@ -29,36 +29,36 @@ const result = await sabi.complete({
 
 ## Features
 
-| Feature                                                                | Status |
-| ---------------------------------------------------------------------- | ------ |
-| Provider abstraction (OpenAI, Groq, Nvidia, DeepSeek, OpenRouter)      | ✅     |
-| Anthropic + Google Gemini providers                                    | ✅     |
-| Prompt templates with `{variable}`                                     | ✅     |
-| Circuit breaker + retry + backoff                                      | ✅     |
-| Provider failover (primary → fallbacks)                                | ✅     |
-| Auto-routing (model array sugar — `["cheap", "gpt-4o"]`)               | ✅     |
-| Streaming (SSE, async iterable)                                        | ✅     |
-| Client-side `readStream` helper                                        | ✅     |
-| Structured output (Zod schemas)                                        | ✅     |
-| Framework adapters (Hono, Next, Express, Fastify, Elysia, generic SSE) | ✅     |
-| Tool calling (auto-execute + chaining)                                 | ✅     |
-| Telemetry hooks (latency, cost, errors, fallback)                      | ✅     |
-| Cost estimation (per-response `estimatedCostUsd`)                      | ✅     |
-| Plugin system (`sabi.use()` lifecycle hooks)                           | ✅     |
-| Cache adapter (`InMemoryCache`, `RedisCache`, BYO)                     | ✅     |
-| OpenTelemetry integration (`sabi/otel`)                                | ✅     |
-| Vercel AI SDK adapter (`sabi/ai-sdk`)                                  | ✅     |
-| Mistral + Ollama providers                                             | ✅     |
-| CLI (`sabi init`, `complete`, `stream`, `config`, `prompt`, etc.)      | ✅     |
-| RAG (zero-config, local or cloud)                                      | ✅     |
-| Memory & conversations (persistent sessions, auto-truncation)          | ✅     |
-| ChatSDK (prepare + call + record in one)                               | ✅     |
-| Sabi Server (deployable AI backend — `POST /v1/chat/completions`)      | 🔜     |
+| Feature                                                                      | Status |
+| ---------------------------------------------------------------------------- | ------ |
+| Provider abstraction (OpenAI, Groq, Nvidia, DeepSeek, OpenRouter)            | ✅     |
+| Anthropic + Google Gemini providers                                          | ✅     |
+| Prompt templates with `{variable}`                                           | ✅     |
+| Circuit breaker + retry + backoff                                            | ✅     |
+| Provider failover (primary → fallbacks)                                      | ✅     |
+| Auto-routing (model array sugar — `["cheap", "gpt-4o"]`)                     | ✅     |
+| Streaming (SSE, async iterable)                                              | ✅     |
+| Client-side `readStream` helper                                              | ✅     |
+| Structured output (Zod schemas)                                              | ✅     |
+| Framework adapters (Hono, Next, Express, Fastify, Elysia, generic SSE)       | ✅     |
+| Tool calling (auto-execute + chaining)                                       | ✅     |
+| Telemetry hooks (latency, cost, errors, fallback)                            | ✅     |
+| Cost estimation (per-response `estimatedCostUsd`)                            | ✅     |
+| Plugin system (`sabi.use()` lifecycle hooks)                                 | ✅     |
+| Cache adapter (`InMemoryCache`, `RedisCache`, BYO)                           | ✅     |
+| OpenTelemetry integration (`sabi/otel`)                                      | ✅     |
+| Vercel AI SDK adapter (`sabi/ai-sdk`)                                        | ✅     |
+| Mistral + Ollama providers                                                   | ✅     |
+| CLI (`sabi init`, `complete`, `stream`, `config`, `prompt`, etc.)            | ✅     |
+| RAG (zero-config, local or cloud)                                            | ✅     |
+| Memory & conversations (persistent sessions, auto-truncation)                | ✅     |
+| ChatSDK (prepare + call + record in one)                                     | ✅     |
+| Sabi Server (deployable AI backend — `POST /v1/chat/completions`)            | 🔜     |
 | Guardrails (PII redaction, injection detection, ML moderation, token limits) | ✅     |
-| Sabi Scan (security scanner — `sabi scan`)                             | 🔜     |
-| Eval suites                                                            | 🔜     |
-| Cloud dashboard                                                        | 🔜     |
-| Hosted open-source models                                              | 🔜     |
+| Sabi Scan (security scanner — `sabi scan`)                                   | 🔜     |
+| Eval suites                                                                  | 🔜     |
+| Cloud dashboard                                                              | 🔜     |
+| Hosted open-source models                                                    | 🔜     |
 
 ## Quick Start
 
