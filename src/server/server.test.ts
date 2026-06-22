@@ -1,5 +1,7 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
+import { createRouter } from "./routes";
+import { createSabi } from "../index";
 
 describe("translateRequest", () => {
   it("converts OpenAI-style request to Sabi CompleteRequest", () => {
@@ -129,5 +131,156 @@ describe("translateStreamChunk", () => {
     expect(dataPart).toStartWith("data: ");
     const parsed = JSON.parse(dataPart.slice(6));
     expect(parsed.choices[0].finish_reason).toBe("stop");
+  });
+});
+
+describe("Server integration", () => {
+  let router: { fetch: (req: Request) => Response | Promise<Response> };
+  let originalFetch: typeof globalThis.fetch;
+
+  function mockJsonResponse(): void {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hello from mock", role: "assistant" } }],
+            usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+            model: "llama-4-scout",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )) as unknown as typeof globalThis.fetch;
+  }
+
+  function mockStreamResponse(): void {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: "Hello" } }] })}\n\n`
+          )
+        );
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              choices: [{ delta: {}, finish_reason: "stop" }],
+            })}\n\n`
+          )
+        );
+        controller.close();
+      },
+    });
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })
+      )) as unknown as typeof globalThis.fetch;
+  }
+
+  beforeAll(async () => {
+    originalFetch = globalThis.fetch;
+    mockJsonResponse();
+    const sabi = createSabi({ groq: { apiKey: "test-key" } });
+    router = await createRouter(sabi);
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("POST /v1/chat/completions returns valid OpenAI-compatible response", async () => {
+    mockJsonResponse();
+    const req = new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "groq/llama-4-scout",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    const choices = body.choices as Array<Record<string, unknown>>;
+    const usage = body.usage as Record<string, unknown>;
+    expect(body.object).toBe("chat.completion");
+    expect(choices).toHaveLength(1);
+    expect((choices[0]!.message as Record<string, unknown>).content).toBe("Hello from mock");
+    expect((choices[0]!.message as Record<string, unknown>).role).toBe("assistant");
+    expect(usage.prompt_tokens).toBe(5);
+    expect(body.model).toBe("groq/llama-4-scout");
+  });
+
+  it("POST /v1/chat/completions with stream=true returns SSE", async () => {
+    mockStreamResponse();
+    const req = new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "groq/llama-4-scout",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: true,
+      }),
+    });
+
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    const text = await res.text();
+    expect(text).toInclude("data: ");
+    expect(text).toInclude("[DONE]");
+    const lines = text.split("\n").filter(Boolean);
+    const dataLine = lines.find((l) => l.startsWith("data: ") && l !== "data: [DONE]");
+    expect(dataLine).toBeTruthy();
+    const parsed = JSON.parse(dataLine!.slice(6));
+    expect(parsed.object).toBe("chat.completion.chunk");
+  });
+
+  it("GET /v1/models returns model list", async () => {
+    const req = new Request("http://localhost/v1/models");
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    const data = body.data as Array<Record<string, unknown>>;
+    expect(body.object).toBe("list");
+    expect(data).toHaveLength(1);
+    expect(data[0]!.id).toBe("sabi-proxy");
+  });
+
+  it("GET /health returns ok", async () => {
+    const req = new Request("http://localhost/health");
+    const res = await router.fetch(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe("ok");
+    expect((body.timestamp as number)).toBeGreaterThan(0);
+  });
+
+  it("returns 500 on provider error", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response("Internal error", { status: 500 }))) as unknown as typeof globalThis.fetch;
+
+    const errSabi = createSabi({ groq: { apiKey: "test-key" } });
+    const errorRouter = await createRouter(errSabi);
+
+    const req = new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "groq/llama-4-scout",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    const res = await errorRouter.fetch(req);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as Record<string, unknown>;
+    const error = body.error as Record<string, unknown>;
+    expect(error.message).toBeTruthy();
+    expect(error.type).toBe("sabi_error");
   });
 });

@@ -156,6 +156,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.8",
+    "hono": "^4.12.26",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3"
   }

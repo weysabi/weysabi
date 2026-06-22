@@ -13,8 +13,8 @@ export async function createRouter(
 ): Promise<{ fetch: (req: Request) => Response | Promise<Response> }> {
   let Hono: new () => HonoApp;
   try {
-    // @ts-expect-error - hono may not be installed; error handled at runtime
-    Hono = (await import("hono")).Hono;
+    const mod = await import("hono");
+    Hono = mod.Hono;
   } catch {
     throw new Error("Hono is required for Sabi Server. Install it: bun add hono");
   }
