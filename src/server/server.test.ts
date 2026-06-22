@@ -257,12 +257,14 @@ describe("Server integration", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.status).toBe("ok");
-    expect((body.timestamp as number)).toBeGreaterThan(0);
+    expect(body.timestamp as number).toBeGreaterThan(0);
   });
 
   it("returns 500 on provider error", async () => {
     globalThis.fetch = (() =>
-      Promise.resolve(new Response("Internal error", { status: 500 }))) as unknown as typeof globalThis.fetch;
+      Promise.resolve(
+        new Response("Internal error", { status: 500 })
+      )) as unknown as typeof globalThis.fetch;
 
     const errSabi = createSabi({ groq: { apiKey: "test-key" } });
     const errorRouter = await createRouter(errSabi);

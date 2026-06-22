@@ -16,6 +16,7 @@ import type {
 import type { ProviderConfig } from "../types";
 import { DEFAULT_RAG_OPTIONS } from "./types";
 import { HnswVectorIndex } from "./vector-index";
+import { identityReranker } from "./reranker";
 
 export class RagEngine {
   private store: RagStore;
@@ -303,7 +304,10 @@ export class RagEngine {
       this.options.embeddingModel
     );
 
-    return this.store.search(embedding, k, filter);
+    const results = await this.store.search(embedding, k, filter);
+
+    const reranker = this.options.reranker ?? identityReranker;
+    return reranker(question, results);
   }
 
   clear(filePath?: string): void {

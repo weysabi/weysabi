@@ -223,7 +223,6 @@ describe("doctor command", () => {
 });
 
 describe("complete command", () => {
-  let originalFetch: typeof globalThis.fetch;
   let originalEnv: typeof process.env;
 
   beforeEach(() => {
@@ -232,7 +231,6 @@ describe("complete command", () => {
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     process.env = originalEnv;
   });
 

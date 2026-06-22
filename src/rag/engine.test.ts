@@ -38,7 +38,7 @@ function mockFetch(): void {
         headers: { "content-type": "application/json" },
       }
     );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }) as any;
 }
 
@@ -61,8 +61,16 @@ function makeEngine(): { engine: RagEngine; cleanup: () => void } {
     engine,
     cleanup: () => {
       engine.close();
-      try { unlinkSync(path); } catch { /* file may not exist */ }
-      try { unlinkSync(path + ".hnsw.idx"); } catch { /* file may not exist */ }
+      try {
+        unlinkSync(path);
+      } catch {
+        /* file may not exist */
+      }
+      try {
+        unlinkSync(path + ".hnsw.idx");
+      } catch {
+        /* file may not exist */
+      }
     },
   };
 }
@@ -152,8 +160,16 @@ describe("RagEngine", () => {
     const engine = new RagEngine({ dbPath: path, embeddingModel: "test/model", chunkSize: 100 });
     await expect(engine.query("test")).rejects.toThrow("embedding provider");
     engine.close();
-    try { unlinkSync(path); } catch { /* file may not exist */ }
-    try { unlinkSync(path + ".hnsw.idx"); } catch { /* file may not exist */ }
+    try {
+      unlinkSync(path);
+    } catch {
+      /* file may not exist */
+    }
+    try {
+      unlinkSync(path + ".hnsw.idx");
+    } catch {
+      /* file may not exist */
+    }
   });
 
   it("clear removes all data", async () => {

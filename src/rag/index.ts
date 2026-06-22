@@ -8,6 +8,12 @@ export { FsObjectStore, SqliteObjectStore } from "./object-store";
 export type { ObjectStore } from "./object-store";
 export type { RagOptions, RagChunk, RagSearchResult, LoadResult, LoadProgressEvent } from "./types";
 export { DEFAULT_RAG_OPTIONS } from "./types";
+export {
+  identityReranker,
+  createCohereReranker,
+  type Reranker,
+  type CohereRerankerOptions,
+} from "./reranker";
 export { RagManager } from "./manager";
 export type { CrossProjectResult } from "./manager";
 export type { RagManagerConfig } from "./manager";

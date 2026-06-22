@@ -1,5 +1,6 @@
 import type { ObjectStore } from "./object-store";
 import type { HnswVectorIndex } from "./vector-index";
+import type { Reranker } from "./reranker";
 
 export interface RagOptions {
   embeddingModel?: string;
@@ -20,6 +21,7 @@ export interface RagOptions {
   storeContentInObjectStore?: boolean;
   sqlitePragmas?: Record<string, string | number>;
   embeddingBatchSize?: number;
+  reranker?: Reranker;
 }
 
 export interface RagChunk {
