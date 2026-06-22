@@ -16,7 +16,15 @@
     "noImplicitOverride": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "types": ["bun"]
+    "types": ["bun"],
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@weysabi/client": ["packages/client/src"],
+      "@weysabi/client/*": ["packages/client/src/*"],
+      "@weysabi/server": ["packages/server/src"],
+      "@weysabi/server/*": ["packages/server/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["packages/*/src"]
 }

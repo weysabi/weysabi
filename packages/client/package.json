@@ -1,0 +1,157 @@
+{
+  "name": "@weysabi/client",
+  "version": "0.7.0",
+  "description": "AI orchestration for fullstack devs — provider failover, structured output, RAG, and streaming. One library, zero markup.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "sabi": "./src/cli/index.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./errors": {
+      "types": "./src/errors.ts",
+      "import": "./src/errors.ts",
+      "default": "./src/errors.ts"
+    },
+    "./sse": {
+      "types": "./src/sse.ts",
+      "import": "./src/sse.ts",
+      "default": "./src/sse.ts"
+    },
+    "./hono": {
+      "types": "./src/hono.ts",
+      "import": "./src/hono.ts",
+      "default": "./src/hono.ts"
+    },
+    "./next": {
+      "types": "./src/next.ts",
+      "import": "./src/next.ts",
+      "default": "./src/next.ts"
+    },
+    "./express": {
+      "types": "./src/express.ts",
+      "import": "./src/express.ts",
+      "default": "./src/express.ts"
+    },
+    "./fastify": {
+      "types": "./src/fastify.ts",
+      "import": "./src/fastify.ts",
+      "default": "./src/fastify.ts"
+    },
+    "./elysia": {
+      "types": "./src/elysia.ts",
+      "import": "./src/elysia.ts",
+      "default": "./src/elysia.ts"
+    },
+    "./ai-sdk": {
+      "types": "./src/ai-sdk.ts",
+      "import": "./src/ai-sdk.ts",
+      "default": "./src/ai-sdk.ts"
+    },
+    "./otel": {
+      "types": "./src/otel.ts",
+      "import": "./src/otel.ts",
+      "default": "./src/otel.ts"
+    },
+    "./cache": {
+      "types": "./src/cache.ts",
+      "import": "./src/cache.ts",
+      "default": "./src/cache.ts"
+    },
+    "./rag": {
+      "types": "./src/rag/index.ts",
+      "import": "./src/rag/index.ts",
+      "default": "./src/rag/index.ts"
+    },
+    "./chat": {
+      "types": "./src/chat/index.ts",
+      "import": "./src/chat/index.ts",
+      "default": "./src/chat/index.ts"
+    },
+    "./guardrails": {
+      "types": "./src/guardrails/index.ts",
+      "import": "./src/guardrails/index.ts",
+      "default": "./src/guardrails/index.ts"
+    },
+    "./prompts": {
+      "types": "./src/prompts/index.ts",
+      "import": "./src/prompts/index.ts",
+      "default": "./src/prompts/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm",
+    "dev": "bun --watch ./src/index.ts",
+    "format": "bunx prettier --write .",
+    "format:check": "bunx prettier --check .",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "prepublishOnly": "bun run build",
+    "check": "bun run lint; bun run format:check; bun run typecheck; bun run test"
+  },
+  "author": {
+    "name": "Benson Isaac",
+    "email": "bensxnisaac@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/weysabi/sabi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/weysabi/sabi/issues"
+  },
+  "homepage": "https://github.com/weysabi/sabi#readme",
+  "keywords": [
+    "ai",
+    "llm",
+    "orchestrator",
+    "failover",
+    "circuit-breaker",
+    "prompt",
+    "template",
+    "groq",
+    "openai",
+    "anthropic"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@ai-sdk/provider": "^3.0.10"
+  },
+  "engines": {
+    "bun": ">=1.3.1"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.5.1",
+    "@joinremba/catalog": "^0.5.0",
+    "commander": "^15.0.0",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "^3.0.10",
+    "@types/bun": "latest",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3"
+  }
+}
