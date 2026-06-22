@@ -60,6 +60,8 @@ export type {
   ToolCall,
   ToolChoice,
   HandlerMessage,
+  ToolCallMessage,
+  ToolResultMessage,
 } from "./types";
 
 export type {
@@ -105,14 +107,8 @@ export { zodToJsonSchema } from "./utils";
 export type { SabiPrompts, PromptDefinition } from "./prompts";
 export { Prompt } from "./prompts";
 
-export interface Sabi {
-  complete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>>;
-  stream(request: StreamRequest): AsyncIterable<StreamChunk>;
-  use(plugin: SabiPlugin): void;
-  guardrail(name: string, options: GuardrailOptions): void;
-  rag: RagEngine;
-  prompts: SabiPrompts;
-}
+import type { Sabi } from "./sabi";
+export type { Sabi } from "./sabi";
 
 class SabiImpl implements Sabi {
   private providers: Map<string, ProviderClient>;

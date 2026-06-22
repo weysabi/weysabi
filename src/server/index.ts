@@ -1,4 +1,4 @@
-import type { Sabi } from "../index";
+import type { Sabi } from "../sabi";
 import { createRouter } from "./routes";
 
 export interface SabiServerOptions {
@@ -17,8 +17,7 @@ export async function createSabiServer(
   const router = await createRouter(sabi);
 
   const server = Bun.serve({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    port: port as any,
+    port,
     fetch: router.fetch as (req: Request) => Response | Promise<Response>,
   });
 

@@ -1,4 +1,4 @@
-import type { Sabi } from "../index";
+import type { Sabi } from "../sabi";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

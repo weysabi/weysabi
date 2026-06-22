@@ -199,7 +199,7 @@ function convertV3Prompt(prompt: LanguageModelV3Prompt): Message[] {
             role: "assistant",
             content: text,
             tool_calls: toolCalls,
-          } as unknown as Message;
+          } as Message;
         }
 
         return { role: "assistant", content: text } as Message;
@@ -214,7 +214,7 @@ function convertV3Prompt(prompt: LanguageModelV3Prompt): Message[] {
             role: "tool",
             tool_call_id: part.toolCallId,
             content,
-          } as unknown as Message;
+          } as Message;
         }
         return { role: "user", content: "" } as Message;
       }

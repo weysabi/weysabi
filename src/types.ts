@@ -8,6 +8,8 @@ export const MessageSchema = z
   .object({
     role: z.string(),
     content: z.string().nullable(),
+    tool_calls: z.array(z.any()).optional(),
+    tool_call_id: z.string().optional(),
   })
   .passthrough();
 export type Message = z.infer<typeof MessageSchema>;
