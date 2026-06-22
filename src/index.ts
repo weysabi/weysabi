@@ -10,6 +10,8 @@ import type {
   ToolDefinition,
   HandlerMessage,
   SabiPlugin,
+  TelemetryHooks,
+  ProviderCallResult,
 } from "./types";
 import { cacheKey } from "./types";
 import {
@@ -40,7 +42,6 @@ import {
   MissingPromptInputError,
   ProviderRequestError,
   SchemaValidationError,
-  ToolExecutionError,
   MaxToolCallsExceededError,
 } from "./errors";
 
@@ -94,7 +95,6 @@ export {
   MissingPromptInputError,
   ProviderRequestError,
   SchemaValidationError,
-  ToolExecutionError,
   MaxToolCallsExceededError,
 };
 
@@ -218,10 +218,14 @@ class SabiImpl implements Sabi {
 
     const cache = this.opts.cache;
     if (cache) {
-      const key = cacheKey(currentRequest);
-      const cached = await cache.get(key);
-      if (cached) {
-        return cached as CompleteResponse<T>;
+      try {
+        const key = cacheKey(currentRequest);
+        const cached = await cache.get(key);
+        if (cached) {
+          return cached as CompleteResponse<T>;
+        }
+      } catch {
+        this.log.warn({ message: "Cache read failed, proceeding without cache" });
       }
     }
 
@@ -236,8 +240,12 @@ class SabiImpl implements Sabi {
         }
       }
       if (cache) {
-        const key = cacheKey(currentRequest);
-        await cache.set(key, response);
+        try {
+          const key = cacheKey(currentRequest);
+          await cache.set(key, response);
+        } catch {
+          this.log.warn({ message: "Cache write failed, response delivered uncached" });
+        }
       }
       return response;
     } catch (err) {
@@ -251,34 +259,7 @@ class SabiImpl implements Sabi {
 
   private async runComplete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
     const parsed = CompleteRequestSchema.parse(request);
-    const messages: HandlerMessage[] = this.resolveMessages(parsed);
-
-    if (parsed.rag) {
-      const queryText = messages
-        .map((m) => ("content" in m ? m.content : ""))
-        .filter(Boolean)
-        .join("\n");
-      if (queryText) {
-        const results = await this.rag.query(queryText);
-        if (results.length > 0) {
-          const context = results.map((r) => r.content).join("\n\n---\n\n");
-          const hasSystem = messages[0]?.role === "system";
-          const systemMsg: HandlerMessage = {
-            role: "system",
-            content: `Use the following context to answer the user's question:\n\n${context}`,
-          };
-          if (hasSystem) {
-            messages[0] = {
-              role: "system",
-              content: (messages[0] as { content: string }).content + "\n\n" + systemMsg.content,
-            };
-          } else {
-            messages.unshift(systemMsg);
-          }
-        }
-      }
-    }
-
+    const messages = await this.injectRagContext(this.resolveMessages(parsed), parsed);
     const models: string[] = [parsed.model as string, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
     const schema = parsed.schema as z.ZodType<T> | undefined;
@@ -296,14 +277,14 @@ class SabiImpl implements Sabi {
       : undefined;
     const maxToolCalls = parsed.maxToolCalls ?? 10;
 
-    let systemMessage: Message | undefined;
-    if (schema !== undefined) {
-      systemMessage = {
-        role: "system" as const,
-        content:
-          "You must respond with valid JSON matching the requested schema. No markdown, no explanation — only JSON.",
-      };
-    }
+    const systemMessage: Message | undefined =
+      schema !== undefined
+        ? {
+            role: "system",
+            content:
+              "You must respond with valid JSON matching the requested schema. No markdown, no explanation — only JSON.",
+          }
+        : undefined;
 
     for (const fullModel of models) {
       const { provider, modelId } = parseModel(fullModel);
@@ -321,164 +302,25 @@ class SabiImpl implements Sabi {
       const modelMessages: HandlerMessage[] = systemMessage
         ? [systemMessage, ...messages]
         : [...messages];
-      let toolCallCount = 0;
-      let toolLoopDone = false;
 
-      while (!toolLoopDone && toolCallCount <= maxToolCalls) {
-        let didToolCall = false;
+      const result = await this.attemptModel<T>({
+        fullModel,
+        modelMessages,
+        models,
+        parsed,
+        client,
+        provider,
+        modelId,
+        schema,
+        maxRetries,
+        maxToolCalls,
+        toolMap,
+        tools,
+        errors,
+        hooks,
+      });
 
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const start = performance.now();
-            const result = await client.complete(modelId, modelMessages, {
-              temperature: parsed.temperature,
-              maxTokens: parsed.maxTokens,
-              topP: parsed.topP,
-              stop: parsed.stop,
-              timeout: this.opts.timeout,
-              responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
-              tools,
-              toolChoice: parsed.toolChoice,
-            });
-            const latencyMs = performance.now() - start;
-            const cost = estimateCost(modelId, result.usage, this.opts.pricing);
-
-            if (result.tool_calls && result.tool_calls.length > 0 && toolMap) {
-              if (toolCallCount >= maxToolCalls) {
-                throw new MaxToolCallsExceededError(maxToolCalls);
-              }
-
-              modelMessages.push({
-                role: "assistant",
-                content: result.content,
-                tool_calls: result.tool_calls,
-              } as HandlerMessage);
-
-              for (const tc of result.tool_calls) {
-                const execute = toolMap.get(tc.name);
-                if (!execute) {
-                  modelMessages.push({
-                    role: "tool",
-                    tool_call_id: tc.id,
-                    content: `Error: Tool "${tc.name}" not found`,
-                  } as HandlerMessage);
-                  continue;
-                }
-
-                let output: string;
-                try {
-                  const args = tryParseJSON(tc.arguments);
-                  output = await execute(args);
-                } catch (execErr) {
-                  output = execErr instanceof Error ? execErr.message : String(execErr);
-                }
-                modelMessages.push({
-                  role: "tool",
-                  tool_call_id: tc.id,
-                  content: output,
-                } as HandlerMessage);
-              }
-
-              toolCallCount++;
-              didToolCall = true;
-              break;
-            }
-
-            if (schema === undefined) {
-              this.log.info({
-                message: `Completed via ${provider}/${modelId}`,
-                model: fullModel,
-                provider,
-                latencyMs,
-                tokens: result.usage?.totalTokens,
-              });
-              return {
-                content: result.content,
-                model: fullModel,
-                provider,
-                usage: result.usage,
-                latencyMs,
-                estimatedCostUsd: cost,
-              } as CompleteResponse<T>;
-            }
-
-            const raw = result.content;
-            const parsedJson = tryParseJSON<T>(raw);
-
-            if (parsedJson !== null) {
-              try {
-                const parsedData = schema.parse(parsedJson);
-                this.log.info({
-                  message: `Completed via ${provider}/${modelId}`,
-                  model: fullModel,
-                  provider,
-                  latencyMs,
-                  tokens: result.usage?.totalTokens,
-                });
-                return {
-                  content: raw,
-                  parsed: parsedData,
-                  model: fullModel,
-                  provider,
-                  usage: result.usage,
-                  latencyMs,
-                  estimatedCostUsd: cost,
-                } as CompleteResponse<T>;
-              } catch (parseErr) {
-                const validationError =
-                  parseErr instanceof z.ZodError ? parseErr : new z.ZodError([]);
-                if (attempt < maxRetries) {
-                  const feedback = `Your previous response was not valid for the expected schema.\nErrors:\n${validationError.issues.map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`).join("\n")}\n\nRespond with ONLY valid JSON matching the schema.`;
-                  modelMessages.push({ role: "assistant" as const, content: raw });
-                  modelMessages.push({ role: "user" as const, content: feedback });
-                  continue;
-                }
-                throw new SchemaValidationError(raw, parseErr);
-              }
-            }
-
-            if (attempt < maxRetries) {
-              modelMessages.push({ role: "assistant" as const, content: raw });
-              modelMessages.push({
-                role: "user" as const,
-                content: "Your response was not valid JSON. Respond with ONLY valid JSON.",
-              });
-              continue;
-            }
-
-            throw new SchemaValidationError(raw, new Error("Response was not valid JSON"));
-          } catch (err) {
-            if (err instanceof SchemaValidationError) throw err;
-            if (err instanceof MaxToolCallsExceededError) throw err;
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            const modelIndex = models.indexOf(fullModel);
-            const remainingFallbacks = models.slice(modelIndex + 1).length;
-
-            this.log.warn({
-              message: `Failing over from ${fullModel}`,
-              model: fullModel,
-              error: errorMessage,
-              remainingFallbacks,
-            });
-
-            const nextModel = models[modelIndex + 1];
-            if (nextModel !== undefined) {
-              hooks?.onFallback?.({
-                from: fullModel,
-                to: nextModel,
-                error: errorMessage,
-                remainingFallbacks,
-              });
-            }
-
-            errors.push({ model: fullModel, error: errorMessage });
-            toolLoopDone = true;
-            break;
-          }
-        }
-
-        if (!didToolCall) break;
-      }
+      if (result) return result;
     }
 
     this.log.error({
@@ -489,6 +331,253 @@ class SabiImpl implements Sabi {
     });
 
     throw new AllModelsFailedError(parsed.model as string, parsed.fallbacks ?? [], errors);
+  }
+
+  private async injectRagContext(
+    messages: HandlerMessage[],
+    parsed: CompleteRequest
+  ): Promise<HandlerMessage[]> {
+    if (!parsed.rag) return messages;
+
+    const queryText = messages
+      .map((m) => ("content" in m ? m.content : ""))
+      .filter(Boolean)
+      .join("\n");
+    if (!queryText) return messages;
+
+    const results = await this.rag.query(queryText);
+    if (results.length === 0) return messages;
+
+    const context = results.map((r) => r.content).join("\n\n---\n\n");
+    const hasSystem = messages[0]?.role === "system";
+    const systemMsg: HandlerMessage = {
+      role: "system",
+      content: `Use the following context to answer the user's question:\n\n${context}`,
+    };
+
+    if (hasSystem) {
+      messages[0] = {
+        role: "system",
+        content: `${(messages[0] as { content: string }).content}\n\n${systemMsg.content}`,
+      };
+    } else {
+      messages.unshift(systemMsg);
+    }
+
+    return messages;
+  }
+
+  private async attemptModel<T>(params: {
+    fullModel: string;
+    modelMessages: HandlerMessage[];
+    models: string[];
+    parsed: CompleteRequest;
+    client: ProviderClient;
+    provider: string;
+    modelId: string;
+    schema: z.ZodType<T> | undefined;
+    maxRetries: number;
+    maxToolCalls: number;
+    toolMap: Map<string, (args: unknown) => Promise<string> | string> | undefined;
+    tools: ToolDefInfo[] | undefined;
+    errors: { model: string; error: string }[];
+    hooks: TelemetryHooks | undefined;
+  }): Promise<CompleteResponse<T> | null> {
+    const {
+      fullModel,
+      modelMessages,
+      models,
+      parsed,
+      client,
+      provider,
+      modelId,
+      schema,
+      maxRetries,
+      maxToolCalls,
+      toolMap,
+      tools,
+      errors,
+      hooks,
+    } = params;
+
+    let toolCallCount = 0;
+
+    while (toolCallCount <= maxToolCalls) {
+      let didToolCall = false;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const start = performance.now();
+          const result = await client.complete(modelId, modelMessages, {
+            temperature: parsed.temperature,
+            maxTokens: parsed.maxTokens,
+            topP: parsed.topP,
+            stop: parsed.stop,
+            timeout: this.opts.timeout,
+            responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
+            tools,
+            toolChoice: parsed.toolChoice,
+          });
+          const latencyMs = performance.now() - start;
+          const cost = estimateCost(modelId, result.usage, this.opts.pricing);
+
+          if (result.tool_calls && result.tool_calls.length > 0 && toolMap) {
+            didToolCall = await this.handleToolCallResult(
+              result,
+              modelMessages,
+              toolMap,
+              maxToolCalls,
+              toolCallCount
+            );
+            toolCallCount++;
+            break;
+          }
+
+          if (schema === undefined) {
+            const response: CompleteResponse<T> = {
+              content: result.content,
+              model: fullModel,
+              provider,
+              usage: result.usage,
+              latencyMs,
+              estimatedCostUsd: cost,
+            } as CompleteResponse<T>;
+
+            this.log.info({
+              message: `Completed via ${provider}/${modelId}`,
+              model: fullModel,
+              provider,
+              latencyMs,
+              tokens: result.usage?.totalTokens,
+            });
+
+            return response;
+          }
+
+          const raw = result.content;
+          const parsedJson = tryParseJSON<T>(raw);
+
+          if (parsedJson !== null) {
+            try {
+              const parsedData = schema.parse(parsedJson);
+              this.log.info({
+                message: `Completed via ${provider}/${modelId}`,
+                model: fullModel,
+                provider,
+                latencyMs,
+                tokens: result.usage?.totalTokens,
+              });
+              return {
+                content: raw,
+                parsed: parsedData,
+                model: fullModel,
+                provider,
+                usage: result.usage,
+                latencyMs,
+                estimatedCostUsd: cost,
+              } as CompleteResponse<T>;
+            } catch (parseErr) {
+              const validationError =
+                parseErr instanceof z.ZodError ? parseErr : new z.ZodError([]);
+              if (attempt < maxRetries) {
+                const feedback = `Your previous response was not valid for the expected schema.\nErrors:\n${validationError.issues.map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`).join("\n")}\n\nRespond with ONLY valid JSON matching the schema.`;
+                modelMessages.push({ role: "assistant" as const, content: raw });
+                modelMessages.push({ role: "user" as const, content: feedback });
+                continue;
+              }
+              throw new SchemaValidationError(raw, parseErr);
+            }
+          }
+
+          if (attempt < maxRetries) {
+            modelMessages.push({ role: "assistant" as const, content: raw });
+            modelMessages.push({
+              role: "user" as const,
+              content: "Your response was not valid JSON. Respond with ONLY valid JSON.",
+            });
+            continue;
+          }
+
+          throw new SchemaValidationError(raw, new Error("Response was not valid JSON"));
+        } catch (err) {
+          if (err instanceof SchemaValidationError) throw err;
+          if (err instanceof MaxToolCallsExceededError) throw err;
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const modelIndex = models.indexOf(fullModel);
+          const remainingFallbacks = models.slice(modelIndex + 1).length;
+
+          this.log.warn({
+            message: `Failing over from ${fullModel}`,
+            model: fullModel,
+            error: errorMessage,
+            remainingFallbacks,
+          });
+
+          const nextModel = models[modelIndex + 1];
+          if (nextModel !== undefined) {
+            hooks?.onFallback?.({
+              from: fullModel,
+              to: nextModel,
+              error: errorMessage,
+              remainingFallbacks,
+            });
+          }
+
+          errors.push({ model: fullModel, error: errorMessage });
+          return null;
+        }
+      }
+
+      if (!didToolCall) break;
+    }
+
+    return null;
+  }
+
+  private async handleToolCallResult(
+    result: ProviderCallResult,
+    modelMessages: HandlerMessage[],
+    toolMap: Map<string, (args: unknown) => Promise<string> | string>,
+    maxToolCalls: number,
+    toolCallCount: number
+  ): Promise<boolean> {
+    const tcs = result.tool_calls!;
+    if (toolCallCount >= maxToolCalls) {
+      throw new MaxToolCallsExceededError(maxToolCalls);
+    }
+
+    modelMessages.push({
+      role: "assistant",
+      content: result.content,
+      tool_calls: tcs,
+    } as HandlerMessage);
+
+    for (const tc of tcs) {
+      const execute = toolMap.get(tc.name);
+      if (!execute) {
+        modelMessages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: `Error: Tool "${tc.name}" not found`,
+        } as HandlerMessage);
+        continue;
+      }
+
+      let output: string;
+      try {
+        const args = tryParseJSON(tc.arguments);
+        output = await execute(args);
+      } catch (execErr) {
+        output = execErr instanceof Error ? execErr.message : String(execErr);
+      }
+      modelMessages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: output,
+      } as HandlerMessage);
+    }
+
+    return true;
   }
 
   async *stream(request: StreamRequest): AsyncIterable<StreamChunk> {

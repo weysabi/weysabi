@@ -1,5 +1,23 @@
+import { z } from "zod";
 import type { CompleteRequest, CompleteResponse, Message } from "../types";
 import type { StreamChunk } from "../types";
+
+const OpenAiMessageSchema = z.object({
+  role: z.string(),
+  content: z.string().nullable().optional(),
+});
+
+const OpenAiRequestSchema = z.object({
+  model: z.string().min(1),
+  messages: z.array(OpenAiMessageSchema).optional(),
+  stream: z.boolean().optional(),
+  temperature: z.number().optional(),
+  max_tokens: z.number().int().positive().optional(),
+  top_p: z.number().min(0).max(1).optional(),
+  stop: z.union([z.string(), z.array(z.string())]).optional(),
+  sabi_fallbacks: z.array(z.string()).optional(),
+  sabi_rag: z.boolean().optional(),
+});
 
 function normalizeMessages(raw: unknown): Message[] {
   if (!Array.isArray(raw)) return [];
@@ -7,19 +25,19 @@ function normalizeMessages(raw: unknown): Message[] {
 }
 
 export function translateRequest(body: Record<string, unknown>): CompleteRequest {
+  const parsed = OpenAiRequestSchema.parse(body);
+
   const req: CompleteRequest = {
-    model: String(body.model ?? ""),
-    messages: normalizeMessages(body.messages),
+    model: parsed.model,
+    messages: normalizeMessages(parsed.messages),
   };
 
-  if (typeof body.temperature === "number") req.temperature = body.temperature;
-  if (typeof body.max_tokens === "number") req.maxTokens = body.max_tokens;
-  if (typeof body.top_p === "number") req.topP = body.top_p;
-  if (body.stop !== undefined) req.stop = body.stop as string | string[];
-  if (body.max_tokens !== undefined) req.maxTokens = body.max_tokens as number;
-
-  if (body.sabi_fallbacks) req.fallbacks = body.sabi_fallbacks as string[];
-  if (body.sabi_rag === true) req.rag = true;
+  if (parsed.temperature !== undefined) req.temperature = parsed.temperature;
+  if (parsed.max_tokens !== undefined) req.maxTokens = parsed.max_tokens;
+  if (parsed.top_p !== undefined) req.topP = parsed.top_p;
+  if (parsed.stop !== undefined) req.stop = parsed.stop;
+  if (parsed.sabi_fallbacks) req.fallbacks = parsed.sabi_fallbacks;
+  if (parsed.sabi_rag === true) req.rag = true;
 
   return req;
 }
@@ -38,7 +56,7 @@ export function translateResponse(
   model: string
 ): Record<string, unknown> {
   return {
-    id: `sabi-${Date.now()}`,
+    id: `sabi-${crypto.randomUUID()}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model,
@@ -62,14 +80,12 @@ export function translateResponse(
   };
 }
 
-let chunkId = 0;
-
 export function translateStreamChunk(chunk: StreamChunk, model: string): string {
   if (chunk.done) {
     return "data: [DONE]\n\n";
   }
 
-  const id = `sabi-${Date.now()}-${++chunkId}`;
+  const id = `sabi-${crypto.randomUUID()}`;
   const data = {
     id,
     object: "chat.completion.chunk",

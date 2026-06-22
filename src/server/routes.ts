@@ -4,10 +4,13 @@ import { translateRequest, translateResponse, translateStreamChunk } from "./tra
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HonoApp = any;
 
+function sseErrorEvent(message: string): string {
+  return `data: ${JSON.stringify({ error: { message, type: "sabi_error" } })}\n\n`;
+}
+
 export async function createRouter(
   sabi: Sabi
 ): Promise<{ fetch: (req: Request) => Response | Promise<Response> }> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   let Hono: new () => HonoApp;
   try {
     // @ts-expect-error - hono may not be installed; error handled at runtime
@@ -15,7 +18,6 @@ export async function createRouter(
   } catch {
     throw new Error("Hono is required for Sabi Server. Install it: bun add hono");
   }
-
   const app = new Hono();
 
   app.get("/v1/models", (c: HonoApp) => {
@@ -43,14 +45,21 @@ export async function createRouter(
 
     if (stream) {
       const iterable = sabi.stream(request);
+      const model = request.model as string;
       return new Response(
         new ReadableStream({
           async pull(controller) {
-            for await (const chunk of iterable) {
-              const line = translateStreamChunk(chunk, request.model as string);
-              controller.enqueue(new TextEncoder().encode(line));
+            try {
+              for await (const chunk of iterable) {
+                const line = translateStreamChunk(chunk, model);
+                controller.enqueue(new TextEncoder().encode(line));
+              }
+              controller.close();
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              controller.enqueue(new TextEncoder().encode(sseErrorEvent(message)));
+              controller.close();
             }
-            controller.close();
           },
         }),
         {

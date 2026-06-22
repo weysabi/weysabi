@@ -68,16 +68,6 @@ export class ProviderRequestError extends SabiError {
   }
 }
 
-export class ToolExecutionError extends SabiError {
-  public readonly toolName: string;
-
-  constructor(toolName: string, message: string) {
-    super(`Tool "${toolName}" failed: ${message}`);
-    this.name = "ToolExecutionError";
-    this.toolName = toolName;
-  }
-}
-
 export class MaxToolCallsExceededError extends SabiError {
   public readonly maxToolCalls: number;
 
