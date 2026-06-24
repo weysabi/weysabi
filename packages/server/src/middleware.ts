@@ -5,6 +5,7 @@ export function createAuth(apiKey: string) {
   const validator = createApiKeyValidator([{ key: apiKey }]);
   const authenticate = validator.authenticate();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (c: any, next: any) => {
     if (c.req.path === "/health") {
       await next();
@@ -44,6 +45,7 @@ export function createRateLimiter(rpm: number) {
     },
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (c: any, next: any) => {
     const result = await limiter.check(c.req.raw);
     if (!result.allowed) {
