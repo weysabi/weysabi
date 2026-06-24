@@ -1,9 +1,7 @@
 import type { Weysabi } from "@weysabi/client";
-import { createRouter } from "./routes";
+import { createRouter, type ServerOptions } from "./routes";
 
-export interface ServerOptions {
-  port?: number;
-}
+export type { ServerOptions };
 
 export async function createServer(
   sabi: Weysabi,
@@ -13,8 +11,22 @@ export async function createServer(
   port: number;
   stop: () => void;
 }> {
+  const apiKey = options.apiKey ?? process.env.SABI_API_KEY;
   const port = options.port ?? (Number(process.env.SABI_PORT) || 3000);
-  const router = await createRouter(sabi);
+  const corsOrigins =
+    options.corsOrigins ??
+    (process.env.SABI_CORS_ORIGINS
+      ? process.env.SABI_CORS_ORIGINS.split(",").map((s) => s.trim())
+      : undefined);
+  const rateLimitRpm = options.rateLimitRpm ?? (Number(process.env.SABI_RATE_LIMIT_RPM) || 300);
+
+  const router = await createRouter(sabi, {
+    port,
+    apiKey,
+    corsOrigins,
+    rateLimitRpm,
+    providers: options.providers,
+  });
 
   const server = Bun.serve({
     port,

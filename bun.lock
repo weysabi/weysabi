@@ -45,6 +45,7 @@
       "name": "@weysabi/server",
       "version": "0.7.0",
       "dependencies": {
+        "@joinremba/gate": "^0.5.3",
         "zod": "^4.4.2",
       },
       "devDependencies": {
@@ -87,6 +88,8 @@
     "@joinremba/catalog": ["@joinremba/catalog@0.5.0", "", { "dependencies": { "@joinremba/core": "^0.4.0", "pino": "^10.3.1", "pino-roll": "^4.0.0" } }, "sha512-7HXJz7DBo1Ft7NTVfJsCJ5yLaiDSAQD+7+CXaNKYrIVNsrShHoFfN4zQ+JExiElKD16Et/WPoGRjEZM4KyJeoQ=="],
 
     "@joinremba/core": ["@joinremba/core@0.4.0", "", {}, "sha512-N5Cent7vjzYN6rPbbHbq9O3iwfEERzKYjbeBkS3K9GSDpVyCQCUR5m7R7pvzPNxeevhwMS7emYKfx4Je3p5Muw=="],
+
+    "@joinremba/gate": ["@joinremba/gate@0.5.3", "", { "dependencies": { "@joinremba/core": "^0.4.0", "zod": "^4.4.2" } }, "sha512-97+EJoRwem0ZejOp2r2sPskXawzcZB3z44OEqlL5nKP1MDh95Rga6RxIe0wtVXOTMFxVm1wJXEttZKreOBNA+Q=="],
 
     "@nodelib/fs.scandir": ["@nodelib/fs.scandir@2.1.5", "", { "dependencies": { "@nodelib/fs.stat": "2.0.5", "run-parallel": "^1.1.9" } }, "sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g=="],
 

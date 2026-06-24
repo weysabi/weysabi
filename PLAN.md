@@ -2,7 +2,7 @@
 
 **Repository**: `github.com/weysabi/sabi`
 **Package**: `@weysabi/client`
-**Domain**: `weysabi.ai`
+**Domain**: `weysabi.co`
 
 ## Vision
 

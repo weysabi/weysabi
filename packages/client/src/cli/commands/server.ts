@@ -13,7 +13,10 @@ export async function serverCommand(options: { port?: string; host?: string }): 
   const { createWeysabi } = await import("../../index");
   const sabi = createWeysabi(providers);
 
-  let createServer: (sabi: Weysabi, options: { port?: number }) => Promise<{ port: number }>;
+  let createServer: (
+    sabi: Weysabi,
+    options: { port?: number; providers?: string[] }
+  ) => Promise<{ port: number }>;
   try {
     createServer = (await import("@weysabi/server")).createServer;
   } catch {
@@ -29,7 +32,10 @@ export async function serverCommand(options: { port?: string; host?: string }): 
   console.log(`Providers: ${Object.keys(providers).join(", ")}`);
 
   try {
-    const server = (await createServer(sabi, { port })) as { port: number };
+    const server = (await createServer(sabi, {
+      port,
+      providers: Object.keys(providers),
+    })) as { port: number };
     console.log(`Weysabi Server ready — http://localhost:${server.port}`);
     console.log("Endpoints:");
     console.log(`  POST /v1/chat/completions — OpenAI-compatible chat`);

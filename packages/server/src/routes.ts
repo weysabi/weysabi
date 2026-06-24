@@ -1,5 +1,14 @@
 import type { Weysabi } from "@weysabi/client";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
+import { createAuth, createRateLimiter } from "./middleware";
+
+export interface ServerOptions {
+  port?: number;
+  apiKey?: string;
+  corsOrigins?: string[];
+  rateLimitRpm?: number;
+  providers?: string[];
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HonoApp = any;
@@ -9,7 +18,8 @@ function sseErrorEvent(message: string): string {
 }
 
 export async function createRouter(
-  sabi: Weysabi
+  sabi: Weysabi,
+  options: ServerOptions = {}
 ): Promise<{ fetch: (req: Request) => Response | Promise<Response> }> {
   let Hono: new () => HonoApp;
   try {
@@ -20,17 +30,52 @@ export async function createRouter(
   }
   const app = new Hono();
 
+  const corsOrigins = options.corsOrigins ?? ["*"];
+  try {
+    const { cors } = await import("hono/cors");
+    app.use(
+      "/*",
+      cors({
+        origin: corsOrigins.includes("*") ? "*" : corsOrigins,
+        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowHeaders: ["Content-Type", "Authorization"],
+        exposeHeaders: ["Content-Length"],
+        maxAge: 86400,
+      })
+    );
+  } catch {
+    // cors() is a no-op if Hono is too old
+  }
+
+  if (options.apiKey) {
+    app.use("/*", createAuth(options.apiKey));
+  }
+
+  const rpm = options.rateLimitRpm ?? 300;
+  app.use("/*", createRateLimiter(rpm));
+
   app.get("/v1/models", (c: HonoApp) => {
+    const providers = options.providers ?? [];
+    const data =
+      providers.length > 0
+        ? providers.map((name) => ({
+            id: `${name}/*`,
+            object: "model",
+            created: Math.floor(Date.now() / 1000),
+            owned_by: name,
+          }))
+        : [
+            {
+              id: "sabi-proxy",
+              object: "model",
+              created: Math.floor(Date.now() / 1000),
+              owned_by: "weysabi",
+            },
+          ];
+
     return c.json({
       object: "list",
-      data: [
-        {
-          id: "sabi-proxy",
-          object: "model",
-          created: Math.floor(Date.now() / 1000),
-          owned_by: "weysabi",
-        },
-      ],
+      data,
     });
   });
 
