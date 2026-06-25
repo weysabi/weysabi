@@ -5,7 +5,7 @@ import type { RateLimitStore } from "@joinremba/gate/rate-limit";
 import { idempotency, InMemoryStore } from "@joinremba/gate/idempotency";
 import type { IdempotencyInstance, IdempotencyStore } from "@joinremba/gate/idempotency";
 import { AuthError, InsufficientPermissionsError, RateLimitError } from "./errors";
-import { extractKeyFromAuth } from "./quota";
+import { fingerprintRequestApiKey } from "./quota";
 
 export type { ApiKeyEntry };
 export type { IdempotencyInstance, IdempotencyStore, RateLimitStore };
@@ -63,6 +63,10 @@ export function createAuth(keys: ApiKeyEntry[]) {
       await next();
       return;
     }
+    if (c.req.path.startsWith("/v1/admin")) {
+      await next();
+      return;
+    }
 
     const result = await authenticate(c.req.raw);
     if (!result.authenticated) {
@@ -80,6 +84,24 @@ export function createAuth(keys: ApiKeyEntry[]) {
       }
     }
 
+    await next();
+  };
+}
+
+export function createAdminAuth(apiKey: string, nonAdminKeys: ApiKeyEntry[] = []) {
+  const authenticate = createApiKeyValidator([{ key: apiKey, scopes: ["admin"] }]).authenticate();
+  const authenticateNonAdmin = createApiKeyValidator(nonAdminKeys).authenticate();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return async (c: any, next: any) => {
+    const result = await authenticate(c.req.raw);
+    if (!result.authenticated) {
+      const nonAdminResult = await authenticateNonAdmin(c.req.raw);
+      if (nonAdminResult.authenticated) {
+        throw new InsufficientPermissionsError("admin");
+      }
+      throw new AuthError("Incorrect admin API key provided");
+    }
     await next();
   };
 }
@@ -117,16 +139,20 @@ export function createRateLimiter(
   const limiter = rateLimit({
     max: rpm,
     store,
-    keyFn: (req: Request) => {
-      const authKey = extractKeyFromAuth(req);
-      if (authKey) return `key:${authKey}`;
-      return `ip:${resolveClientIp(req, options.getRemoteAddress?.(req), options.trustedProxies)}`;
-    },
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (c: any, next: any) => {
-    const result = await limiter.check(c.req.raw);
+    const request = c.req.raw as Request;
+    const keyFingerprint = await fingerprintRequestApiKey(request);
+    const key = keyFingerprint
+      ? `key:${keyFingerprint}`
+      : `ip:${resolveClientIp(
+          request,
+          options.getRemoteAddress?.(request),
+          options.trustedProxies
+        )}`;
+    const result = await limiter.check(key);
     if (!result.allowed) {
       const retryAfter = Math.ceil((result.reset - Date.now()) / 1000);
       throw new RateLimitError(retryAfter);

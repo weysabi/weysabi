@@ -1,72 +1,66 @@
-# Architecture
+# Repository Architecture
 
-`@weysabi/client` is a single-package, Bun-native AI orchestration library. All source lives in `src/`, tests live next to source.
+Weysabi is a Bun workspace with three packages:
 
-## Module Map
+| Package           | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `packages/sabi`   | Provider-agnostic AI orchestration SDK and `sabi` CLI        |
+| `packages/server` | OpenAI-compatible Bun/Hono server and administration API     |
+| `packages/webapp` | Static Next.js documentation and self-hosted admin interface |
 
-| File                         | Purpose                                                                    |
-| ---------------------------- | -------------------------------------------------------------------------- |
-| `src/index.ts`               | `WeysabiImpl` class + `createWeysabi()` factory. Entry point.              |
-| `src/types.ts`               | Zod schemas + TS interfaces                                                |
-| `src/providers.ts`           | `ProviderClient` — dispatches to handlers, retry, circuit breaker, timeout |
-| `src/providers/handler.ts`   | `ProviderHandler` interface                                                |
-| `src/providers/openai.ts`    | OpenAI-compatible handler (Groq, Nvidia, DeepSeek, OpenRouter, Together)   |
-| `src/providers/anthropic.ts` | Anthropic Messages API handler                                             |
-| `src/providers/google.ts`    | Google Gemini handler                                                      |
-| `src/prompts.ts`             | `PromptRegistry` — stores templates, renders `{variable}`                  |
-| `src/sse.ts`                 | Generic `toResponse(stream)` — returns `Response` for Web Fetch frameworks |
-| `src/stream.ts`              | `readStream` — client-side async generator for consuming SSE               |
-| `src/errors.ts`              | 7 error classes extending `SabiError`                                      |
-| `src/utils.ts`               | `parseModel`, `tryParseJSON`                                               |
-| `src/logger.ts`              | Structured logger via `@joinremba/catalog`                                 |
-| `src/hono.ts`                | Re-exports `toResponse` from `sse`                                         |
-| `src/next.ts`                | Re-exports `toResponse` from `sse`                                         |
-| `src/elysia.ts`              | Re-exports `toResponse` from `sse`                                         |
-| `src/express.ts`             | `pipe(stream, res)` for Express                                            |
-| `src/fastify.ts`             | `pipe(stream, reply)` for Fastify                                          |
+Tests live beside source files as `src/*.test.ts`.
 
-## Sub-path Exports
+## Core SDK
 
-Each adapter is a flat sub-path export in `package.json`:
+Important modules in `packages/sabi/src`:
 
-```
-@weysabi/client
-@weysabi/client/errors
-@weysabi/client/sse
-@weysabi/client/hono
-@weysabi/client/next
-@weysabi/client/express
-@weysabi/client/fastify
-@weysabi/client/elysia
-```
+- `index.ts` — `WeysabiImpl` and `createWeysabi()`
+- `types.ts` — Zod request schemas and public TypeScript contracts
+- `providers.ts` — retries, circuit breaking, timeouts, and handler dispatch
+- `providers/` — provider-specific handlers
+- `prompts/` — typed prompt registry, rendering, and execution
+- `rag/` — ingestion, embedding, HNSW search, and persistence
+- `chat/` — conversation memory, SQLite/Postgres stores, and ChatSDK
+- `guardrails/` — PII, injection, content, moderation, and output limits
+- `cli/` — project setup and runtime commands
 
-Zero cost if unused — tree-shakeable by the bundler.
+## Server
 
-## Provider System
+Important modules in `packages/server/src`:
 
-```mermaid
-flowchart LR
-    WeysabiImpl --> ProviderClient
-    ProviderClient --> ProviderHandler
-    ProviderHandler --> openaiHandler
-    ProviderHandler --> anthropicHandler
-    ProviderHandler --> googleHandler
-```
+- `routes.ts` — HTTP route composition
+- `translate.ts` — OpenAI request/response translation
+- `middleware.ts` — API-key auth, trusted proxies, and rate limits
+- `quota.ts` — atomic token reservations and API-key fingerprints
+- `ledger.ts` — bounded usage records and aggregate statistics
+- `aliases.ts` — model alias resolution
+- `index.ts` — `createServer()` and public server exports
 
-`ProviderClient` handles cross-cutting concerns (retry, backoff, circuit breaker, logging) and delegates provider-specific logic (URL, headers, body format, response parsing) to `ProviderHandler` implementations.
+Admin endpoints only exist when `SABI_ADMIN_API_KEY` or `adminApiKey` is configured.
 
-Provider + model notation: `provider/model-id` (e.g. `groq/llama-4-scout`, `anthropic/claude-3-5-sonnet-20241022`).
+## Webapp
+
+`packages/webapp` uses Next.js 15, React 19, and Tailwind CSS 4. It is statically exported. Direct admin connection is for local or trusted self-hosted use; production deployments should proxy admin requests through an authenticated server-side application.
 
 ## Conventions
 
-- Named exports only. No `export default` except `createWeysabi` factory.
-- Zod for all runtime validation.
-- Custom error classes extending `SabiError`.
-- Tests mock `globalThis.fetch` — no real API calls.
-- Tests next to source: `src/*.test.ts`.
-- Structured logging via `createModuleLogger("module.name")`.
+- Named exports only, except the `createWeysabi` default export
+- Zod for runtime input validation
+- Custom error classes for stable public failures
+- Tests mock provider calls; do not make real API requests
+- Structured logging via `createModuleLogger()`
+- Preserve caller-owned injected stores
+- Never expose provider keys or API-key prefixes
 
-## Dependencies
+## Validation
 
-- **Runtime**: `zod`, `@joinremba/catalog`
-- **Dev**: `@types/bun`, `eslint`, `prettier`, `typescript`
+```text
+bun install --frozen-lockfile
+bun run format:check
+bun run lint
+bun run typecheck
+bun test packages/
+bun run --cwd packages/webapp lint
+bun run --cwd packages/webapp typecheck
+bun run --cwd packages/webapp build
+```

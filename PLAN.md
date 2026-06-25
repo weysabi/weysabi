@@ -44,6 +44,13 @@ The orchestration layer is the moat. By the time hosted inference launches, user
 
 ## Implementation Phases
 
+### Current State — v0.9.0
+
+- Bun workspace with SDK, server, and webapp packages
+- Self-hosted server supports aliases, scoped keys, atomic quotas, usage accounting, and protected admin APIs
+- Webapp provides documentation and a local/self-hosted administration interface
+- Next major architecture work is the project-scoped control plane in `.sabi/CONTROL-PLANE.md`
+
 ### Phase 0 — Core Library (Shipped as v0.3.0)
 
 - [x] Provider abstraction (OpenAI-compatible API, any provider)

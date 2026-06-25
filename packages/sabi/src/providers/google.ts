@@ -86,6 +86,9 @@ export const googleHandler: ProviderHandler = {
     if (params.topP !== undefined) config.topP = params.topP;
     if (params.stop !== undefined)
       config.stopSequences = Array.isArray(params.stop) ? params.stop : [params.stop];
+    if (params.responseFormat?.type === "json_object") {
+      config.responseMimeType = "application/json";
+    }
     if (Object.keys(config).length > 0) body.generationConfig = config;
 
     const tools = formatTools(params.tools);

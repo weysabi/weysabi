@@ -21,8 +21,8 @@ export function HeroSection() {
         </h1>
 
         <p className="animate-fade-in animate-delay-200 mt-6 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          One library, zero markup. Provider failover, structured output, RAG,
-          guardrails, and prompts — all in a single Bun-native package.
+          One library, zero markup. Provider failover, structured output, RAG, guardrails, and
+          prompts — all in a single Bun-native package.
         </p>
 
         <div className="animate-fade-in-up animate-delay-300 mt-10 flex items-center justify-center gap-4 flex-wrap">

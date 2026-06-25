@@ -1,6 +1,6 @@
 {
   "name": "@weysabi/sabi",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "AI orchestration for fullstack devs — provider failover, structured output, RAG, and streaming. One library, zero markup.",
   "type": "module",
   "main": "./src/index.ts",

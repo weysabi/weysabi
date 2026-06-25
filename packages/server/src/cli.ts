@@ -47,6 +47,7 @@ ENVIRONMENT
   SABI_OPENROUTER_API_KEY   OpenRouter API key
   SABI_OLLAMA_API_KEY       Ollama API key
   SABI_API_KEY              Admin API key (all scopes)
+  SABI_ADMIN_API_KEY        Dedicated key for /v1/admin endpoints
   SABI_API_KEYS             Scoped keys: key:scope1,scope2;key2
   SABI_PORT                 Port (default: 3000)
   SABI_HOST                 Host (default: 0.0.0.0)
@@ -79,6 +80,7 @@ const server = await createServer(sabi, {
   port: port ?? (process.env.SABI_PORT ? Number(process.env.SABI_PORT) : undefined),
   hostname: host ?? process.env.SABI_HOST,
   apiKey: process.env.SABI_API_KEY || undefined,
+  adminApiKey: process.env.SABI_ADMIN_API_KEY || undefined,
   apiKeys: process.env.SABI_API_KEYS ? parseApiKeys(process.env.SABI_API_KEYS) : undefined,
   providers: Object.keys(providers),
 });

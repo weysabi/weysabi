@@ -33,10 +33,7 @@ interface UsageRecord {
 }
 
 const DEFAULTS = {
-  url:
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_SABI_ADMIN_URL) || "",
-  key:
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_SABI_ADMIN_KEY) || "",
+  url: (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_SABI_ADMIN_URL) || "",
 };
 
 function getStored(key: string, fallback: string): string {
@@ -55,12 +52,8 @@ function fmt(n: number): string {
 }
 
 export default function AdminPage() {
-  const [serverUrl, setServerUrl] = useState(() =>
-    getStored("sabi_admin_url", DEFAULTS.url)
-  );
-  const [apiKey, setApiKey] = useState(() =>
-    getStored("sabi_admin_key", DEFAULTS.key)
-  );
+  const [serverUrl, setServerUrl] = useState(() => getStored("sabi_admin_url", DEFAULTS.url));
+  const [apiKey, setApiKey] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [usage, setUsage] = useState<{
     records: UsageRecord[];
@@ -69,7 +62,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formUrl, setFormUrl] = useState(serverUrl);
-  const [formKey, setFormKey] = useState(apiKey);
+  const [formKey, setFormKey] = useState("");
 
   const fetchData = useCallback(async () => {
     if (!serverUrl) return;
@@ -117,14 +110,9 @@ export default function AdminPage() {
     setServerUrl(url);
     setApiKey(formKey);
     setStored("sabi_admin_url", url);
-    setStored("sabi_admin_key", formKey);
   }
 
-  const statusColor = stats
-    ? "text-green-500"
-    : error
-    ? "text-red-500"
-    : "text-muted-foreground";
+  const statusColor = stats ? "text-green-500" : error ? "text-red-500" : "text-muted-foreground";
   const statusLabel = stats ? "Connected" : error ? "Error" : "Disconnected";
 
   const keyBarData = useMemo(() => {
@@ -157,9 +145,7 @@ export default function AdminPage() {
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm transition-all hover:bg-muted disabled:opacity-50"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
         )}
@@ -183,7 +169,7 @@ export default function AdminPage() {
         </div>
         <div className="flex-1 min-w-[160px]">
           <label className="block text-xs text-muted-foreground mb-1.5 font-medium">
-            API Key
+            Admin API Key
           </label>
           <input
             type="password"
@@ -199,6 +185,10 @@ export default function AdminPage() {
         >
           Connect
         </button>
+        <p className="w-full text-xs text-muted-foreground">
+          The admin key stays in memory for this browser session and is not saved locally. Direct
+          connection is intended for local or trusted self-hosted environments.
+        </p>
       </form>
 
       {error && (
@@ -327,9 +317,7 @@ export default function AdminPage() {
                       >
                         <span
                           className={`h-1.5 w-1.5 rounded-full ${
-                            record.status === "success"
-                              ? "bg-green-500"
-                              : "bg-red-500"
+                            record.status === "success" ? "bg-green-500" : "bg-red-500"
                           }`}
                         />
                         {record.status}
@@ -348,15 +336,13 @@ export default function AdminPage() {
           <Plug className="h-10 w-10 mx-auto mb-4 text-muted-foreground/50" />
           <h2 className="text-lg font-semibold mb-2">Connect to a server</h2>
           <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-            Enter your Weysabi server URL above to view live usage data, token
-            quotas, and request history.
+            Enter your Weysabi server URL above to view live usage data, token quotas, and request
+            history.
           </p>
           <p className="text-xs text-muted-foreground">
             You can also set{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5">
-              NEXT_PUBLIC_SABI_ADMIN_URL
-            </code>{" "}
-            in your environment and rebuild.
+            <code className="rounded bg-muted px-1.5 py-0.5">NEXT_PUBLIC_SABI_ADMIN_URL</code> in
+            your environment and rebuild.
           </p>
         </section>
       )}
@@ -386,9 +372,7 @@ function StatCard({
         <Icon className="h-4 w-4" />
         <span>{label}</span>
       </div>
-      <p className={`text-3xl font-bold tracking-tight ${valueClass ?? ""}`}>
-        {value}
-      </p>
+      <p className={`text-3xl font-bold tracking-tight ${valueClass ?? ""}`}>{value}</p>
     </div>
   );
 }

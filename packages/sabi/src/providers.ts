@@ -330,6 +330,8 @@ export class ProviderClient {
       stop?: string | string[];
       timeout: number;
       signal?: AbortSignal;
+      responseFormat?: Record<string, unknown>;
+      includeUsage?: boolean;
     }
   ): Promise<AsyncIterable<StreamChunk>> {
     this.checkCircuitBreaker();

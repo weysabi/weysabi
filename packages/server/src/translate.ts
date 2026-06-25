@@ -7,17 +7,55 @@ const OpenAiMessageSchema = z.object({
   content: z.string().nullable().optional(),
 });
 
-const OpenAiRequestSchema = z.object({
-  model: z.string().min(1),
-  messages: z.array(OpenAiMessageSchema).min(1),
-  stream: z.boolean().optional(),
-  temperature: z.number().optional(),
-  max_tokens: z.number().int().positive().optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  stop: z.union([z.string(), z.array(z.string())]).optional(),
-  sabi_fallbacks: z.array(z.string()).optional(),
-  sabi_rag: z.boolean().optional(),
-});
+const OpenAiRequestSchema = z
+  .object({
+    model: z.string().min(1),
+    messages: z.array(OpenAiMessageSchema).min(1),
+    stream: z.boolean().optional(),
+    temperature: z.number().optional(),
+    max_tokens: z.number().int().positive().optional(),
+    max_completion_tokens: z.number().int().positive().optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    stop: z.union([z.string(), z.array(z.string())]).optional(),
+    response_format: z.record(z.string(), z.unknown()).optional(),
+    stream_options: z
+      .object({
+        include_usage: z.boolean().optional(),
+      })
+      .optional(),
+    n: z.number().int().positive().optional(),
+    tools: z.unknown().optional(),
+    tool_choice: z.unknown().optional(),
+    sabi_fallbacks: z.array(z.string()).optional(),
+    sabi_rag: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.max_tokens !== undefined &&
+      value.max_completion_tokens !== undefined &&
+      value.max_tokens !== value.max_completion_tokens
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["max_completion_tokens"],
+        message: "max_tokens and max_completion_tokens must match when both are provided",
+      });
+    }
+    if (value.n !== undefined && value.n !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["n"],
+        message: "Only n=1 is supported",
+      });
+    }
+    if (value.tools !== undefined || value.tool_choice !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["tools"],
+        message: "HTTP tool calling is not supported; use @weysabi/sabi directly",
+      });
+    }
+  });
 
 function normalizeMessages(raw: unknown): Message[] {
   if (!Array.isArray(raw)) return [];
@@ -33,9 +71,14 @@ export function translateRequest(body: Record<string, unknown>): CompleteRequest
   };
 
   if (parsed.temperature !== undefined) req.temperature = parsed.temperature;
-  if (parsed.max_tokens !== undefined) req.maxTokens = parsed.max_tokens;
+  const maxTokens = parsed.max_completion_tokens ?? parsed.max_tokens;
+  if (maxTokens !== undefined) req.maxTokens = maxTokens;
   if (parsed.top_p !== undefined) req.topP = parsed.top_p;
   if (parsed.stop !== undefined) req.stop = parsed.stop;
+  if (parsed.response_format !== undefined) req.responseFormat = parsed.response_format;
+  if (parsed.stream_options?.include_usage !== undefined) {
+    req.includeUsage = parsed.stream_options.include_usage;
+  }
   if (parsed.sabi_fallbacks) req.fallbacks = parsed.sabi_fallbacks;
   if (parsed.sabi_rag === true) req.rag = true;
 

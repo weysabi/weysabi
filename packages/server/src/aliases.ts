@@ -1,3 +1,5 @@
+import { ModelAliasCycleError } from "./errors";
+
 export interface ModelAlias {
   alias: string;
   model: string;
@@ -31,7 +33,18 @@ export function buildModelAliases(config?: ModelAlias[], env?: string): ModelAli
 }
 
 export function resolveAlias(aliases: ModelAliasMap, model: string): string {
-  return aliases.get(model) ?? model;
+  const visited = new Set<string>();
+  let resolved = model;
+
+  while (aliases.has(resolved)) {
+    if (visited.has(resolved)) {
+      throw new ModelAliasCycleError(resolved);
+    }
+    visited.add(resolved);
+    resolved = aliases.get(resolved)!;
+  }
+
+  return resolved;
 }
 
 export function getAliasesList(aliases: ModelAliasMap): ModelAlias[] {

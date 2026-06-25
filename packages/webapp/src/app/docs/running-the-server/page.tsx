@@ -35,6 +35,7 @@ SABI_GROQ_API_KEY=gsk_... bunx weysabi-server`}</code>
                 ["SABI_PORT", "3000", "HTTP listen port"],
                 ["SABI_HOST", "0.0.0.0", "Listen address"],
                 ["SABI_API_KEY", "—", "Admin API key"],
+                ["SABI_ADMIN_API_KEY", "—", "Dedicated admin endpoint key"],
                 ["SABI_RATE_LIMIT_RPM", "300", "Rate limit per minute"],
                 ["SABI_CORS_ORIGINS", "*", "Allowed CORS origins"],
                 ["SABI_MODEL_ALIASES", "—", "Model alias mappings"],
@@ -62,6 +63,12 @@ SABI_GROQ_API_KEY=gsk_... bunx weysabi-server`}</code>
           <li>
             <code className="text-xs">GET /health</code> — Health check
           </li>
+          <li>
+            <code className="text-xs">GET /v1/admin/stats</code> — Protected usage statistics
+          </li>
+          <li>
+            <code className="text-xs">GET /v1/admin/usage</code> — Protected usage records
+          </li>
         </ul>
       </section>
 
@@ -78,6 +85,7 @@ const sabi = createWeysabi({
 const server = await createServer(sabi, {
   port: 3000,
   apiKey: "sk-secret",
+  adminApiKey: "sk-admin-secret",
 });
 
 // server.stop() to shut down`}</code>

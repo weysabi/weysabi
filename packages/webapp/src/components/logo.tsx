@@ -23,14 +23,7 @@ export function Logo({ className }: { className?: string }) {
         strokeLinejoin="round"
         opacity="0.4"
       />
-      <text
-        x="36"
-        y="22"
-        fontFamily="inherit"
-        fontSize="16"
-        fontWeight="700"
-        fill="currentColor"
-      >
+      <text x="36" y="22" fontFamily="inherit" fontSize="16" fontWeight="700" fill="currentColor">
         Weysabi
       </text>
     </svg>

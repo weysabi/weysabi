@@ -5,7 +5,7 @@ import { createWeysabi } from "@weysabi/sabi";
 import type { StreamRequest, Weysabi } from "@weysabi/sabi";
 import { resolveApiKeys, parseApiKeys, resolveClientIp } from "./middleware";
 import { buildModelAliases, resolveAlias, getAliasesList } from "./aliases";
-import { InMemoryTokenQuotaStore, extractKeyFromAuth } from "./quota";
+import { fingerprintApiKey, fingerprintRequestApiKey, InMemoryTokenQuotaStore } from "./quota";
 import { InMemoryUsageLedger } from "./ledger";
 
 describe("translateRequest", () => {
@@ -51,6 +51,38 @@ describe("translateRequest", () => {
 
     expect(result.fallbacks).toEqual(["openai/gpt-4o-mini"]);
     expect(result.rag).toBeTrue();
+  });
+
+  it("supports OpenAI token, response format, and stream usage fields", () => {
+    const result = translateRequest({
+      model: "groq/llama-4-scout",
+      messages: [{ role: "user", content: "Hi" }],
+      max_completion_tokens: 250,
+      response_format: { type: "json_object" },
+      stream_options: { include_usage: true },
+      n: 1,
+    });
+
+    expect(result.maxTokens).toBe(250);
+    expect(result.responseFormat).toEqual({ type: "json_object" });
+    expect(result.includeUsage).toBeTrue();
+  });
+
+  it("rejects unsupported OpenAI request behavior explicitly", () => {
+    const base = {
+      model: "groq/llama-4-scout",
+      messages: [{ role: "user", content: "Hi" }],
+    };
+
+    expect(() => translateRequest({ ...base, n: 2 })).toThrow("Only n=1");
+    expect(() => translateRequest({ ...base, tools: [] })).toThrow("tool calling");
+    expect(() =>
+      translateRequest({
+        ...base,
+        max_tokens: 100,
+        max_completion_tokens: 200,
+      })
+    ).toThrow("must match");
   });
 
   it("rejects missing messages", () => {
@@ -950,64 +982,104 @@ describe("Idempotency", () => {
 
 describe("Token quotas", () => {
   describe("InMemoryTokenQuotaStore", () => {
-    it("allows within limits", async () => {
+    it("reserves and commits actual usage", async () => {
       const store = new InMemoryTokenQuotaStore();
-      const check = await store.check("key-1", { maxTokensPerMin: 1000 });
-      expect(check.allowed).toBeTrue();
+      const result = await store.reserve("key-1", 600, { maxTokensPerMin: 1000 });
+      expect(result.allowed).toBeTrue();
+      if (!result.allowed) throw new Error("reservation should be allowed");
+      await store.commit(result.reservation.id, 400);
+
+      const next = await store.reserve("key-1", 601, { maxTokensPerMin: 1000 });
+      expect(next.allowed).toBeFalse();
     });
 
-    it("rejects when quota exceeded", async () => {
+    it("counts pending reservations atomically", async () => {
       const store = new InMemoryTokenQuotaStore();
-      await store.record("key-1", 600);
-      await store.record("key-1", 500);
-      const check = await store.check("key-1", { maxTokensPerMin: 1000 });
-      expect(check.allowed).toBeFalse();
-      expect(check.reason).toInclude("Token quota exceeded");
+      const [first, second] = await Promise.all([
+        store.reserve("key-1", 600, { maxTokensPerMin: 1000 }),
+        store.reserve("key-1", 600, { maxTokensPerMin: 1000 }),
+      ]);
+
+      expect([first.allowed, second.allowed].filter(Boolean)).toHaveLength(1);
+      const rejected = first.allowed ? second : first;
+      expect(rejected.allowed).toBeFalse();
+      if (rejected.allowed) throw new Error("one reservation should be rejected");
+      expect(rejected.reason).toInclude("Token quota exceeded");
     });
 
-    it("allows after window slides", async () => {
+    it("releases unused reservations", async () => {
       const store = new InMemoryTokenQuotaStore();
-      await store.record("key-1", 1000);
-      // Advance time past the 1-minute window
-      const future = Date.now() + 61_000;
+      const first = await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 });
+      expect(first.allowed).toBeTrue();
+      if (!first.allowed) throw new Error("reservation should be allowed");
+      await store.release(first.reservation.id);
+
+      const second = await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 });
+      expect(second.allowed).toBeTrue();
+    });
+
+    it("allows committed usage after the window slides", async () => {
+      const store = new InMemoryTokenQuotaStore();
+      const result = await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 });
+      if (!result.allowed) throw new Error("reservation should be allowed");
+      await store.commit(result.reservation.id, 1000);
+
       const realNow = Date.now;
-      Date.now = () => future;
+      Date.now = () => realNow() + 61_000;
       try {
-        const check = await store.check("key-1", { maxTokensPerMin: 1000 });
-        expect(check.allowed).toBeTrue();
+        expect((await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 })).allowed).toBeTrue();
       } finally {
         Date.now = realNow;
       }
     });
 
-    it("tracks per-key independently", async () => {
+    it("tracks keys independently", async () => {
       const store = new InMemoryTokenQuotaStore();
-      await store.record("key-a", 1000);
-      const checkA = await store.check("key-a", { maxTokensPerMin: 1000 });
-      expect(checkA.allowed).toBeFalse();
-      const checkB = await store.check("key-b", { maxTokensPerMin: 1000 });
-      expect(checkB.allowed).toBeTrue();
+      const first = await store.reserve("key-a", 1000, { maxTokensPerMin: 1000 });
+      if (!first.allowed) throw new Error("reservation should be allowed");
+
+      expect((await store.reserve("key-a", 1, { maxTokensPerMin: 1000 })).allowed).toBeFalse();
+      expect((await store.reserve("key-b", 1000, { maxTokensPerMin: 1000 })).allowed).toBeTrue();
     });
   });
 
-  describe("extractKeyFromAuth", () => {
-    it("extracts from Bearer token", () => {
+  describe("API-key fingerprints", () => {
+    it("returns a stable SHA-256 fingerprint without exposing the key", async () => {
+      const apiKey = "sk-long-secret-key";
+      const fingerprint = await fingerprintApiKey(apiKey);
+
+      expect(fingerprint).toHaveLength(64);
+      expect(fingerprint).toBe(await fingerprintApiKey(apiKey));
+      expect(fingerprint).not.toContain(apiKey);
+      expect(fingerprint).not.toContain(apiKey.slice(0, 16));
+    });
+
+    it("distinguishes keys with the same prefix", async () => {
+      const prefix = "sk-shared-prefix";
+      expect(await fingerprintApiKey(`${prefix}-one`)).not.toBe(
+        await fingerprintApiKey(`${prefix}-two`)
+      );
+    });
+
+    it("extracts and fingerprints a Bearer token", async () => {
       const req = new Request("http://localhost", {
         headers: { authorization: "Bearer sk-long-secret-key" },
       });
-      expect(extractKeyFromAuth(req)).toBe("sk-long-secret-k");
+      expect(await fingerprintRequestApiKey(req)).toBe(
+        await fingerprintApiKey("sk-long-secret-key")
+      );
     });
 
-    it("returns null without auth header", () => {
+    it("returns null without auth header", async () => {
       const req = new Request("http://localhost");
-      expect(extractKeyFromAuth(req)).toBeNull();
+      expect(await fingerprintRequestApiKey(req)).toBeNull();
     });
 
-    it("returns null for empty token", () => {
+    it("returns null for empty token", async () => {
       const req = new Request("http://localhost", {
         headers: { authorization: "Bearer " },
       });
-      expect(extractKeyFromAuth(req)).toBeNull();
+      expect(await fingerprintRequestApiKey(req)).toBeNull();
     });
   });
 
@@ -1034,7 +1106,11 @@ describe("Token quotas", () => {
 
     it("returns 429 when token quota exceeded", async () => {
       const store = new InMemoryTokenQuotaStore();
-      await store.record("sk-quota-key", 1000);
+      const existing = await store.reserve(await fingerprintApiKey("sk-quota-key"), 1000, {
+        maxTokensPerMin: 1000,
+      });
+      if (!existing.allowed) throw new Error("reservation should be allowed");
+      await store.commit(existing.reservation.id, 1000);
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
       const router = await createRouter(sabi, {
         quotaConfig: { maxTokensPerMin: 1000 },
@@ -1086,9 +1162,10 @@ describe("Token quotas", () => {
 
       expect(res.status).toBe(200);
 
-      // Second request should still be allowed (30 < 10000)
-      const check = await store.check("sk-recording", { maxTokensPerMin: 10000 });
-      expect(check.allowed).toBeTrue();
+      const check = await store.reserve(await fingerprintApiKey("sk-recording"), 9971, {
+        maxTokensPerMin: 10000,
+      });
+      expect(check.allowed).toBeFalse();
     });
 
     it("bypasses quota when no auth key", async () => {
@@ -1111,6 +1188,109 @@ describe("Token quotas", () => {
       );
 
       expect(res.status).toBe(200);
+    });
+
+    it("releases the reservation when completion fails", async () => {
+      let commits = 0;
+      let releases = 0;
+      const quotaStore = {
+        async reserve(key: string, estimatedTokens: number) {
+          return {
+            allowed: true as const,
+            reservation: { id: "reservation-1", key, reservedTokens: estimatedTokens },
+          };
+        },
+        async commit() {
+          commits++;
+        },
+        async release() {
+          releases++;
+        },
+      };
+      const failingSabi = {
+        async complete() {
+          throw new Error("provider unavailable");
+        },
+        async *stream() {},
+      } as unknown as Weysabi;
+      const router = await createRouter(failingSabi, {
+        quotaConfig: { maxTokensPerMin: 10_000 },
+        quotaStore,
+      });
+
+      const response = await router.fetch(
+        new Request("http://localhost/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer sk-failing",
+          },
+          body: JSON.stringify({
+            model: "groq/llama-4-scout",
+            messages: [{ role: "user", content: "Hi" }],
+          }),
+        })
+      );
+
+      expect(response.status).toBe(500);
+      expect(commits).toBe(0);
+      expect(releases).toBe(1);
+    });
+
+    it("releases the reservation when a stream fails", async () => {
+      let commits = 0;
+      let releases = 0;
+      const quotaStore = {
+        async reserve(key: string, estimatedTokens: number) {
+          return {
+            allowed: true as const,
+            reservation: { id: "reservation-1", key, reservedTokens: estimatedTokens },
+          };
+        },
+        async commit() {
+          commits++;
+        },
+        async release() {
+          releases++;
+        },
+      };
+      const failingSabi = {
+        async complete() {
+          throw new Error("unused");
+        },
+        stream() {
+          return {
+            [Symbol.asyncIterator]() {
+              return {
+                next: () => Promise.reject(new Error("stream unavailable")),
+              };
+            },
+          };
+        },
+      } as unknown as Weysabi;
+      const router = await createRouter(failingSabi, {
+        quotaConfig: { maxTokensPerMin: 10_000 },
+        quotaStore,
+      });
+
+      const response = await router.fetch(
+        new Request("http://localhost/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer sk-failing-stream",
+          },
+          body: JSON.stringify({
+            model: "groq/llama-4-scout",
+            messages: [{ role: "user", content: "Hi" }],
+            stream: true,
+          }),
+        })
+      );
+      await response.text();
+
+      expect(commits).toBe(0);
+      expect(releases).toBe(1);
     });
   });
 });
@@ -1151,6 +1331,7 @@ describe("Usage ledger", () => {
       expect(stats.totalRequests).toBe(1);
       expect(stats.totalTokens).toBe(30);
       expect(stats.totalCostUsd).toBeCloseTo(0.001);
+      expect(stats.activeKeys).toBe(1);
     });
 
     it("aggregates across keys", async () => {
@@ -1177,6 +1358,27 @@ describe("Usage ledger", () => {
       const all = await ledger.query();
       expect(all.records).toHaveLength(2);
       expect(all.total).toBe(2);
+      expect((await ledger.stats()).activeKeys).toBe(2);
+    });
+
+    it("evicts oldest records and returns newest records first", async () => {
+      const ledger = new InMemoryUsageLedger(2);
+      for (let index = 1; index <= 3; index++) {
+        await ledger.record({
+          keyFingerprint: `key-${index}`,
+          model: "groq/llama-4-scout",
+          promptTokens: index,
+          completionTokens: index,
+          totalTokens: index * 2,
+          timestamp: index,
+          status: "success",
+        });
+      }
+
+      const result = await ledger.query();
+      expect(result.total).toBe(2);
+      expect(result.records.map((record) => record.keyFingerprint)).toEqual(["key-3", "key-2"]);
+      expect((await ledger.stats()).activeKeys).toBe(2);
     });
   });
 });
@@ -1241,6 +1443,22 @@ describe("Model aliases", () => {
     it("passes through when no aliases configured", () => {
       const map = buildModelAliases();
       expect(resolveAlias(map, "groq/llama-4-scout")).toBe("groq/llama-4-scout");
+    });
+
+    it("resolves aliases that reference another alias", () => {
+      const map = buildModelAliases([
+        { alias: "sabi-default", model: "sabi-fast" },
+        { alias: "sabi-fast", model: "groq/llama-4-scout" },
+      ]);
+      expect(resolveAlias(map, "sabi-default")).toBe("groq/llama-4-scout");
+    });
+
+    it("rejects alias cycles", () => {
+      const map = buildModelAliases([
+        { alias: "alias-a", model: "alias-b" },
+        { alias: "alias-b", model: "alias-a" },
+      ]);
+      expect(() => resolveAlias(map, "alias-a")).toThrow("cycle");
     });
   });
 
@@ -1327,6 +1545,42 @@ describe("Model aliases", () => {
       expect(capturedModel).toBe("groq/llama-4-scout");
     });
 
+    it("resolves aliases in fallback chains", async () => {
+      let capturedFallbacks: string[] = [];
+      const fakeSabi = {
+        complete(request: Record<string, unknown>) {
+          capturedFallbacks = request.fallbacks as string[];
+          return Promise.resolve({
+            content: "Hello",
+            model: request.model as string,
+            provider: "groq",
+            latencyMs: 10,
+          });
+        },
+        stream() {
+          return (async function* () {})();
+        },
+      } as unknown as Weysabi;
+      const router = await createRouter(fakeSabi, {
+        modelAliases: [{ alias: "sabi-backup", model: "openai/gpt-4o-mini" }],
+      });
+
+      const response = await router.fetch(
+        new Request("http://localhost/v1/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "groq/llama-4-scout",
+            messages: [{ role: "user", content: "Hi" }],
+            sabi_fallbacks: ["sabi-backup"],
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(capturedFallbacks).toEqual(["openai/gpt-4o-mini"]);
+    });
+
     it("GET /v1/models includes aliases", async () => {
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
       const router = await createRouter(sabi, {
@@ -1348,10 +1602,34 @@ describe("Model aliases", () => {
 
 describe("Admin endpoints", () => {
   describe("Scoped auth", () => {
-    it("chat:write key gets 403 on admin endpoints", async () => {
+    it("does not expose admin routes without an explicit admin API key", async () => {
+      const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
+      const router = await createRouter(sabi);
+
+      const res = await router.fetch(new Request("http://localhost/v1/admin/stats"));
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 401 when the admin API key is missing or incorrect", async () => {
+      const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
+      const router = await createRouter(sabi, { adminApiKey: "sk-admin" });
+
+      const missing = await router.fetch(new Request("http://localhost/v1/admin/stats"));
+      expect(missing.status).toBe(401);
+
+      const incorrect = await router.fetch(
+        new Request("http://localhost/v1/admin/stats", {
+          headers: { authorization: "Bearer wrong-key" },
+        })
+      );
+      expect(incorrect.status).toBe(401);
+    });
+
+    it("does not accept a normal scoped API key on admin endpoints", async () => {
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
       const router = await createRouter(sabi, {
         apiKeys: [{ key: "sk-chat", scopes: ["chat:write"] }],
+        adminApiKey: "sk-admin",
       });
 
       const statsRes = await router.fetch(
@@ -1371,9 +1649,7 @@ describe("Admin endpoints", () => {
 
     it("admin key can access admin endpoints", async () => {
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const router = await createRouter(sabi, {
-        apiKeys: [{ key: "sk-admin", scopes: ["admin"] }],
-      });
+      const router = await createRouter(sabi, { adminApiKey: "sk-admin" });
 
       const statsRes = await router.fetch(
         new Request("http://localhost/v1/admin/stats", {
@@ -1394,9 +1670,13 @@ describe("Admin endpoints", () => {
   describe("GET /v1/admin/stats", () => {
     it("returns zero stats when no usage recorded", async () => {
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const router = await createRouter(sabi);
+      const router = await createRouter(sabi, { adminApiKey: "sk-admin" });
 
-      const res = await router.fetch(new Request("http://localhost/v1/admin/stats"));
+      const res = await router.fetch(
+        new Request("http://localhost/v1/admin/stats", {
+          headers: { authorization: "Bearer sk-admin" },
+        })
+      );
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.totalRequests).toBe(0);
@@ -1429,9 +1709,16 @@ describe("Admin endpoints", () => {
       });
 
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const router = await createRouter(sabi, { usageLedger: ledger });
+      const router = await createRouter(sabi, {
+        usageLedger: ledger,
+        adminApiKey: "sk-admin",
+      });
 
-      const res = await router.fetch(new Request("http://localhost/v1/admin/stats"));
+      const res = await router.fetch(
+        new Request("http://localhost/v1/admin/stats", {
+          headers: { authorization: "Bearer sk-admin" },
+        })
+      );
       const body = (await res.json()) as Record<string, unknown>;
 
       expect(body.totalRequests).toBe(2);
@@ -1458,10 +1745,15 @@ describe("Admin endpoints", () => {
       }
 
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const router = await createRouter(sabi, { usageLedger: ledger });
+      const router = await createRouter(sabi, {
+        usageLedger: ledger,
+        adminApiKey: "sk-admin",
+      });
 
       const res = await router.fetch(
-        new Request("http://localhost/v1/admin/usage?limit=3&offset=2")
+        new Request("http://localhost/v1/admin/usage?limit=3&offset=2", {
+          headers: { authorization: "Bearer sk-admin" },
+        })
       );
       const body = (await res.json()) as { records: unknown[]; total: number };
 
@@ -1471,8 +1763,10 @@ describe("Admin endpoints", () => {
 
     it("filters by key fingerprint", async () => {
       const ledger = new InMemoryUsageLedger();
+      const keyA = await fingerprintApiKey("key-a");
+      const keyB = await fingerprintApiKey("key-b");
       await ledger.record({
-        keyFingerprint: "key-a",
+        keyFingerprint: keyA,
         model: "groq/llama-4-scout",
         promptTokens: 10,
         completionTokens: 20,
@@ -1481,7 +1775,7 @@ describe("Admin endpoints", () => {
         status: "success",
       });
       await ledger.record({
-        keyFingerprint: "key-b",
+        keyFingerprint: keyB,
         model: "openai/gpt-4o",
         promptTokens: 10,
         completionTokens: 20,
@@ -1491,13 +1785,37 @@ describe("Admin endpoints", () => {
       });
 
       const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const router = await createRouter(sabi, { usageLedger: ledger });
+      const router = await createRouter(sabi, {
+        usageLedger: ledger,
+        adminApiKey: "sk-admin",
+      });
 
-      const res = await router.fetch(new Request("http://localhost/v1/admin/usage?key=key-a"));
+      const res = await router.fetch(
+        new Request(`http://localhost/v1/admin/usage?key=${keyA}`, {
+          headers: { authorization: "Bearer sk-admin" },
+        })
+      );
       const body = (await res.json()) as { records: unknown[]; total: number };
 
       expect(body.records).toHaveLength(1);
       expect(body.total).toBe(1);
+    });
+
+    it("rejects malformed or unbounded pagination", async () => {
+      const router = await createRouter(createWeysabi({ groq: { apiKey: "test-key" } }), {
+        adminApiKey: "sk-admin",
+      });
+      const request = (query: string) =>
+        router.fetch(
+          new Request(`http://localhost/v1/admin/usage?${query}`, {
+            headers: { authorization: "Bearer sk-admin" },
+          })
+        );
+
+      expect((await request("limit=101")).status).toBe(400);
+      expect((await request("limit=abc")).status).toBe(400);
+      expect((await request("offset=-1")).status).toBe(400);
+      expect((await request("key=raw-api-key")).status).toBe(400);
     });
   });
 });

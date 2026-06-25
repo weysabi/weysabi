@@ -36,7 +36,11 @@ export function TestimonialsSection() {
             className="animate-fade-in-up group rounded-xl border border-border bg-card p-6 transition-all hover:shadow-md hover:border-primary/20"
             style={{ animationDelay: `${i * 150}ms` }}
           >
-            <svg className="h-6 w-6 text-muted-foreground/30 mb-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg
+              className="h-6 w-6 text-muted-foreground/30 mb-4"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10H14.017zM0 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151C7.546 6.068 5.983 8.789 5.983 11H10v10H0z" />
             </svg>
             <p className="text-sm text-muted-foreground leading-relaxed mb-6">

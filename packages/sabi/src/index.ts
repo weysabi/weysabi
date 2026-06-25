@@ -288,14 +288,17 @@ class WeysabiImpl implements Weysabi {
       : undefined;
     const maxToolCalls = parsed.maxToolCalls ?? 10;
 
-    const systemMessage: Message | undefined =
-      schema !== undefined
-        ? {
-            role: "system",
-            content:
-              "You must respond with valid JSON matching the requested schema. No markdown, no explanation — only JSON.",
-          }
-        : undefined;
+    const wantsJson =
+      schema !== undefined ||
+      parsed.responseFormat?.type === "json_object" ||
+      parsed.responseFormat?.type === "json_schema";
+    const systemMessage: Message | undefined = wantsJson
+      ? {
+          role: "system",
+          content:
+            "You must respond with valid JSON matching the requested schema. No markdown, no explanation — only JSON.",
+        }
+      : undefined;
 
     for (const fullModel of models) {
       const { provider, modelId } = parseModel(fullModel);
@@ -425,7 +428,8 @@ class WeysabiImpl implements Weysabi {
             topP: parsed.topP,
             stop: parsed.stop,
             timeout: this.opts.timeout,
-            responseFormat: schema !== undefined ? { type: "json_object" as const } : undefined,
+            responseFormat:
+              schema !== undefined ? { type: "json_object" as const } : parsed.responseFormat,
             tools,
             toolChoice: parsed.toolChoice,
           });
@@ -649,6 +653,8 @@ class WeysabiImpl implements Weysabi {
           stop: parsed.stop,
           timeout: this.opts.timeout,
           signal: parsed.signal,
+          responseFormat: parsed.responseFormat,
+          includeUsage: parsed.includeUsage,
         });
 
         this.log.info({

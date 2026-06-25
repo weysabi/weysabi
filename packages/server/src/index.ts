@@ -23,6 +23,7 @@ export async function createServer(
   stop: () => void;
 }> {
   const apiKey = options.apiKey ?? process.env.SABI_API_KEY;
+  const adminApiKey = options.adminApiKey ?? process.env.SABI_ADMIN_API_KEY;
   const apiKeys = options.apiKeys;
   const port = options.port ?? envInteger("SABI_PORT", 3000);
   const hostname = options.hostname ?? process.env.SABI_HOST ?? "0.0.0.0";
@@ -45,6 +46,7 @@ export async function createServer(
   const router = await createRouter(sabi, {
     port,
     apiKey,
+    adminApiKey,
     apiKeys,
     corsOrigins,
     rateLimitRpm,
@@ -89,6 +91,17 @@ export async function createServer(
 }
 
 export type { ApiKeyEntry, IdempotencyStore, RateLimitStore } from "./middleware";
+export { buildModelAliases, getAliasesList, resolveAlias } from "./aliases";
+export type { ModelAlias, ModelAliasMap } from "./aliases";
+export { fingerprintApiKey, fingerprintRequestApiKey, InMemoryTokenQuotaStore } from "./quota";
+export type {
+  QuotaReservation,
+  QuotaReservationResult,
+  TokenQuotaConfig,
+  TokenQuotaStore,
+} from "./quota";
+export { InMemoryUsageLedger } from "./ledger";
+export type { UsageLedger, UsageRecord } from "./ledger";
 export {
   RedisIdempotencyStore,
   RedisRateLimitStore,

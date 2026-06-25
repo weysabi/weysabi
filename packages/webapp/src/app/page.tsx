@@ -50,9 +50,7 @@ export default function HomePage() {
       <footer className="border-t border-border">
         <div className="mx-auto max-w-6xl px-4 py-10 flex items-center justify-between">
           <Logo className="h-6 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            MIT License &middot; Weysabi
-          </p>
+          <p className="text-sm text-muted-foreground">MIT License &middot; Weysabi</p>
         </div>
       </footer>
     </div>

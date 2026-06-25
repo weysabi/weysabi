@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { createWeysabi } from "./index";
 import { ProviderClient } from "./providers";
+import { openaiHandler } from "./providers/openai";
 import type { ResolvedWeysabiOptions } from "./types";
 
 type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -40,6 +41,19 @@ const opts: ResolvedWeysabiOptions = {
 };
 
 const defaultParams: Params = { timeout: 30_000 };
+
+describe("OpenAI-compatible provider", () => {
+  it("requests usage in streaming responses", () => {
+    const body = openaiHandler.buildBody("gpt-4o-mini", [{ role: "user", content: "Hi" }], {
+      stream: true,
+      includeUsage: true,
+      responseFormat: { type: "json_object" },
+    });
+
+    expect(body.stream_options).toEqual({ include_usage: true });
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+});
 
 describe("anthropic provider", () => {
   it("builds correct request and parses response", async () => {

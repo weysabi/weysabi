@@ -20,14 +20,24 @@ export interface UsageLedger {
     totalRequests: number;
     totalTokens: number;
     totalCostUsd: number;
+    activeKeys: number;
   }>;
 }
 
 export class InMemoryUsageLedger implements UsageLedger {
   private records: UsageRecord[] = [];
 
+  constructor(private readonly maxRecords = 10_000) {
+    if (!Number.isInteger(maxRecords) || maxRecords < 1) {
+      throw new Error("maxRecords must be a positive integer");
+    }
+  }
+
   async record(entry: UsageRecord): Promise<void> {
     this.records.push(entry);
+    if (this.records.length > this.maxRecords) {
+      this.records.splice(0, this.records.length - this.maxRecords);
+    }
   }
 
   async query(opts?: {
@@ -39,10 +49,11 @@ export class InMemoryUsageLedger implements UsageLedger {
     if (opts?.keyFingerprint) {
       filtered = filtered.filter((r) => r.keyFingerprint === opts.keyFingerprint);
     }
-    const total = filtered.length;
+    const ordered = [...filtered].sort((a, b) => b.timestamp - a.timestamp);
+    const total = ordered.length;
     const offset = opts?.offset ?? 0;
     const limit = opts?.limit ?? 100;
-    const records = filtered.slice(offset, offset + limit);
+    const records = ordered.slice(offset, offset + limit);
     return { records, total };
   }
 
@@ -50,6 +61,7 @@ export class InMemoryUsageLedger implements UsageLedger {
     totalRequests: number;
     totalTokens: number;
     totalCostUsd: number;
+    activeKeys: number;
   }> {
     let filtered = this.records;
     if (keyFingerprint) {
@@ -59,6 +71,7 @@ export class InMemoryUsageLedger implements UsageLedger {
       totalRequests: filtered.length,
       totalTokens: filtered.reduce((sum, r) => sum + r.totalTokens, 0),
       totalCostUsd: filtered.reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0),
+      activeKeys: new Set(filtered.map((record) => record.keyFingerprint)).size,
     };
   }
 }

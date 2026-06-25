@@ -4,7 +4,13 @@ import { InMemoryRateLimitStore } from "@joinremba/gate/rate-limit";
 import { InMemoryStore } from "@joinremba/gate/idempotency";
 import { z } from "zod";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
-import { createAuth, createRateLimiter, createIdempotency, resolveApiKeys } from "./middleware";
+import {
+  createAdminAuth,
+  createAuth,
+  createRateLimiter,
+  createIdempotency,
+  resolveApiKeys,
+} from "./middleware";
 import type { ApiKeyEntry, IdempotencyStore, RateLimitStore } from "./middleware";
 import {
   IdempotencyConflictError,
@@ -16,8 +22,8 @@ import { buildModelAliases, resolveAlias, getAliasesList } from "./aliases";
 import type { ModelAlias, ModelAliasMap } from "./aliases";
 import { ok, fail, fromServerError } from "./responses";
 import { createModuleLogger } from "./logger";
-import { InMemoryTokenQuotaStore, extractKeyFromAuth } from "./quota";
-import type { TokenQuotaConfig, TokenQuotaStore } from "./quota";
+import { InMemoryTokenQuotaStore, fingerprintRequestApiKey } from "./quota";
+import type { QuotaReservation, TokenQuotaConfig, TokenQuotaStore } from "./quota";
 import { InMemoryUsageLedger } from "./ledger";
 import type { UsageLedger } from "./ledger";
 
@@ -25,6 +31,7 @@ export interface ServerOptions {
   port?: number;
   hostname?: string;
   apiKey?: string;
+  adminApiKey?: string;
   apiKeys?: ApiKeyEntry[];
   corsOrigins?: string[];
   rateLimitRpm?: number;
@@ -49,12 +56,33 @@ function sseErrorEvent(message: string): string {
   return `data: ${JSON.stringify({ error: { message, type: "sabi_error" } })}\n\n`;
 }
 
+function estimateRequestTokens(request: {
+  messages?: Array<{ content?: string | null }>;
+  maxTokens?: number;
+}): number {
+  const promptCharacters = (request.messages ?? []).reduce(
+    (sum, message) => sum + (message.content?.length ?? 0),
+    0
+  );
+  const promptTokens = Math.max(1, Math.ceil(promptCharacters / 4));
+  return promptTokens + (request.maxTokens ?? 1024);
+}
+
 async function sha256(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 const log = createModuleLogger("routes");
+
+const AdminUsageQuerySchema = z.object({
+  key: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u, "key must be a SHA-256 fingerprint")
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
 
 export async function createRouter(
   sabi: Weysabi,
@@ -100,6 +128,9 @@ export async function createRouter(
   const apiKeys = resolveApiKeys(options.apiKey, options.apiKeys);
   if (apiKeys.length > 0) {
     app.use("/*", createAuth(apiKeys));
+  }
+  if (options.adminApiKey) {
+    app.use("/v1/admin/*", createAdminAuth(options.adminApiKey, apiKeys));
   }
 
   const rpm = options.rateLimitRpm ?? 300;
@@ -175,28 +206,33 @@ export async function createRouter(
     return ok(c, { status: "ok", timestamp: Date.now() });
   });
 
-  app.get("/v1/admin/stats", async (c: HonoApp) => {
-    const allStats = await usageLedger.stats();
+  if (options.adminApiKey) {
+    app.get("/v1/admin/stats", async (c: HonoApp) => {
+      const allStats = await usageLedger.stats();
 
-    const allRecords = await usageLedger.query({ limit: 10_000 });
-    const keyFingerprints = new Set(allRecords.records.map((r) => r.keyFingerprint));
-
-    return ok(c, {
-      totalRequests: allStats.totalRequests,
-      totalTokens: allStats.totalTokens,
-      totalCostUsd: allStats.totalCostUsd,
-      activeKeys: keyFingerprints.size,
+      return ok(c, {
+        totalRequests: allStats.totalRequests,
+        totalTokens: allStats.totalTokens,
+        totalCostUsd: allStats.totalCostUsd,
+        activeKeys: allStats.activeKeys,
+      });
     });
-  });
 
-  app.get("/v1/admin/usage", async (c: HonoApp) => {
-    const key = c.req.query("key") || undefined;
-    const limit = Number(c.req.query("limit")) || 50;
-    const offset = Number(c.req.query("offset")) || 0;
+    app.get("/v1/admin/usage", async (c: HonoApp) => {
+      const query = AdminUsageQuerySchema.parse({
+        key: c.req.query("key") || undefined,
+        limit: c.req.query("limit") || undefined,
+        offset: c.req.query("offset") || undefined,
+      });
 
-    const result = await usageLedger.query({ keyFingerprint: key, limit, offset });
-    return ok(c, result);
-  });
+      const result = await usageLedger.query({
+        keyFingerprint: query.key,
+        limit: query.limit,
+        offset: query.offset,
+      });
+      return ok(c, result);
+    });
+  }
 
   app.post("/v1/chat/completions", async (c: HonoApp) => {
     const body = (await c.req.json()) as Record<string, unknown>;
@@ -225,13 +261,22 @@ export async function createRouter(
 
     const request = translateRequest(body);
     request.model = resolveAlias(modelAliases, request.model as string);
-    const authKey = extractKeyFromAuth(c.req.raw);
+    if (request.fallbacks) {
+      request.fallbacks = request.fallbacks.map((model) => resolveAlias(modelAliases, model));
+    }
+    const keyFingerprint = await fingerprintRequestApiKey(c.req.raw);
+    let quotaReservation: QuotaReservation | undefined;
 
-    if (quotaConfig && authKey) {
-      const check = await quotaStore.check(authKey, quotaConfig);
-      if (!check.allowed) {
-        throw new QuotaExceededError(check.reason ?? "Token quota exceeded");
+    if (quotaConfig && keyFingerprint) {
+      const result = await quotaStore.reserve(
+        keyFingerprint,
+        estimateRequestTokens(request),
+        quotaConfig
+      );
+      if (!result.allowed) {
+        throw new QuotaExceededError(result.reason);
       }
+      quotaReservation = result.reservation;
     }
 
     const start = Date.now();
@@ -244,6 +289,20 @@ export async function createRouter(
       const iterable = sabi.stream({ ...request, signal: c.req.raw.signal });
       const iterator = iterable[Symbol.asyncIterator]();
       const model = request.model as string;
+      let quotaSettled = false;
+      const commitQuota = async (actualTokens?: number) => {
+        if (!quotaReservation || quotaSettled) return;
+        quotaSettled = true;
+        await quotaStore.commit(
+          quotaReservation.id,
+          actualTokens ?? quotaReservation.reservedTokens
+        );
+      };
+      const releaseQuota = async () => {
+        if (!quotaReservation || quotaSettled) return;
+        quotaSettled = true;
+        await quotaStore.release(quotaReservation.id);
+      };
       return new Response(
         new ReadableStream({
           async pull(controller) {
@@ -251,10 +310,10 @@ export async function createRouter(
               let next = await iterator.next();
               while (!next.done) {
                 const chunk = next.value;
-                if (chunk.done && chunk.usage?.totalTokens && authKey) {
-                  if (quotaStore) await quotaStore.record(authKey, chunk.usage.totalTokens);
+                if (chunk.done && chunk.usage?.totalTokens && keyFingerprint) {
+                  await commitQuota(chunk.usage.totalTokens);
                   await usageLedger.record({
-                    keyFingerprint: authKey,
+                    keyFingerprint,
                     model,
                     promptTokens: chunk.usage.promptTokens,
                     completionTokens: chunk.usage.completionTokens,
@@ -267,9 +326,11 @@ export async function createRouter(
                 controller.enqueue(new TextEncoder().encode(line));
                 next = await iterator.next();
               }
+              await commitQuota();
               controller.close();
               log.info("stream complete", { model, latencyMs: Date.now() - start });
             } catch (err) {
+              await releaseQuota();
               const message = err instanceof Error ? err.message : String(err);
               log.error("stream error", { model, error: message });
               if (c.req.raw.signal.aborted) return;
@@ -278,6 +339,7 @@ export async function createRouter(
             }
           },
           async cancel() {
+            await releaseQuota();
             await iterator.return?.();
           },
         }),
@@ -291,13 +353,25 @@ export async function createRouter(
       );
     }
 
-    const response = await sabi.complete(request);
+    let response;
+    try {
+      response = await sabi.complete(request);
+    } catch (err) {
+      if (quotaReservation) await quotaStore.release(quotaReservation.id);
+      throw err;
+    }
     const translated = translateResponse(response, request.model as string);
 
-    if (authKey && response.usage?.totalTokens) {
-      if (quotaStore) await quotaStore.record(authKey, response.usage.totalTokens);
+    if (quotaReservation) {
+      await quotaStore.commit(
+        quotaReservation.id,
+        response.usage?.totalTokens ?? quotaReservation.reservedTokens
+      );
+    }
+
+    if (keyFingerprint && response.usage?.totalTokens) {
       await usageLedger.record({
-        keyFingerprint: authKey,
+        keyFingerprint,
         model: request.model as string,
         promptTokens: response.usage.promptTokens,
         completionTokens: response.usage.completionTokens,

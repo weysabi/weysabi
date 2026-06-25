@@ -18,6 +18,7 @@ export interface ProviderHandler {
       topP?: number;
       stop?: string | string[];
       stream: boolean;
+      includeUsage?: boolean;
       responseFormat?: Record<string, unknown>;
       tools?: ToolDefInfo[];
       toolChoice?: string;

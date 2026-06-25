@@ -32,6 +32,8 @@ sabi server --host 127.0.0.1 --port 3000
 | POST   | `/v1/chat/completions` | Chat completion        |
 | GET    | `/v1/models`           | List configured models |
 | GET    | `/health`              | Health check           |
+| GET    | `/v1/admin/stats`      | Aggregate usage stats  |
+| GET    | `/v1/admin/usage`      | Paginated usage data   |
 
 ## Configuration
 
@@ -40,6 +42,7 @@ sabi server --host 127.0.0.1 --port 3000
 | `SABI_PORT`              | `3000`    | HTTP server port                      |
 | `SABI_HOST`              | `0.0.0.0` | HTTP server bind address              |
 | `SABI_API_KEY`           | —         | Bearer token auth (disabled if unset) |
+| `SABI_ADMIN_API_KEY`     | —         | Dedicated key enabling admin routes   |
 | `SABI_CORS_ORIGINS`      | `*`       | Comma-separated CORS origins          |
 | `SABI_RATE_LIMIT_RPM`    | `300`     | Per-IP rate limit (requests/minute)   |
 | `SABI_MAX_BODY_BYTES`    | `1048576` | Maximum request body size             |
