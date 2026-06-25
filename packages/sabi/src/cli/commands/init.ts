@@ -84,6 +84,11 @@ export function upsertEnvFile(projectDir: string, values: Record<string, string>
   return envPath;
 }
 
+function addGitkeep(dir: string): void {
+  const gitkeep = resolve(dir, ".gitkeep");
+  if (!existsSync(gitkeep)) writeFileSync(gitkeep, "", "utf-8");
+}
+
 export async function initCommand(): Promise<void> {
   p.intro("sabi init");
 
@@ -94,9 +99,9 @@ export async function initCommand(): Promise<void> {
     options: KNOWN_PROVIDERS.map((name) => ({
       value: name,
       label: providerLabel(name),
-      hint: `${name.toUpperCase()}_API_KEY`,
+      hint: `${DEFAULT_MODELS[name] ?? ""} ・ ${name.toUpperCase()}_API_KEY`,
     })),
-    required: false,
+    required: true,
   });
   if (p.isCancel(selectedProviders)) process.exit(0);
 
@@ -107,6 +112,7 @@ export async function initCommand(): Promise<void> {
     const envValue = process.env[envVar];
     if (envValue) {
       providers[name] = { apiKey: "" };
+      p.log.info(`${providerLabel(name)} key found in ${envVar}`);
       continue;
     }
     const key = await p.password({
@@ -118,18 +124,33 @@ export async function initCommand(): Promise<void> {
     newEnvValues[envVar] = key as string;
   }
 
-  const defaultModelSuggestions = (selectedProviders as string[]).map(
-    (name) => DEFAULT_MODELS[name] ?? `${name}/model-id`
+  const modelOptions = (selectedProviders as string[]).map((name) => ({
+    value: DEFAULT_MODELS[name] ?? `${name}/model-id`,
+    label: DEFAULT_MODELS[name] ?? `${name}/model-id`,
+  }));
+  const uniqueModels = modelOptions.filter(
+    (opt, i, arr) => arr.findIndex((o) => o.value === opt.value) === i
   );
 
   let defaultModel: string | undefined;
-  if (defaultModelSuggestions.length > 0) {
-    const result = await p.text({
+  if (uniqueModels.length > 0) {
+    const modelChoice = await p.select({
       message: "Default model?",
-      placeholder: defaultModelSuggestions[0] ?? "groq/llama-4-scout",
+      options: [...uniqueModels, { value: "__custom__", label: "Custom model…" }],
     });
-    if (p.isCancel(result)) process.exit(0);
-    defaultModel = (result as string) || defaultModelSuggestions[0];
+    if (p.isCancel(modelChoice)) process.exit(0);
+
+    if (modelChoice === "__custom__") {
+      const custom = await p.text({
+        message: "Enter model identifier",
+        placeholder: uniqueModels[0]?.value ?? "provider/model-id",
+        validate: (v) => (v ? undefined : "Model is required"),
+      });
+      if (p.isCancel(custom)) process.exit(0);
+      defaultModel = custom as string;
+    } else {
+      defaultModel = modelChoice as string;
+    }
   }
 
   const wantsPrompts = await p.confirm({
@@ -142,13 +163,50 @@ export async function initCommand(): Promise<void> {
   if (wantsPrompts) {
     promptsDir = resolve(projectDir, "prompts");
     mkdirSync(promptsDir, { recursive: true });
+    addGitkeep(promptsDir);
     for (const [name, content] of Object.entries(EXAMPLE_PROMPT)) {
       const fp = resolve(promptsDir, name);
       if (!existsSync(fp)) {
         writeFileSync(fp, content, "utf-8");
       }
     }
-    p.log.step(`Created ${Object.keys(EXAMPLE_PROMPT).length} example prompts in prompts/`);
+    const readme = resolve(promptsDir, "README.md");
+    if (!existsSync(readme)) {
+      writeFileSync(
+        readme,
+        `# Prompts
+
+Example prompt templates for use with \`sabi.prompts.register()\`.
+
+Each file is a plain text template with \`{variable}\` placeholders.
+Use \`sabi\`'s prompt registry to load and render them:
+
+\`\`\`ts
+import { createWeysabi } from "@weysabi/sabi";
+
+const sabi = createWeysabi({ /* providers */ });
+
+sabi.prompts.register({
+  id: "classify",
+  messages: [
+    {
+      role: "user",
+      content: readFileSync("./prompts/classify.prompt.txt", "utf-8"),
+    },
+  ],
+  model: "groq/llama-4-scout",
+});
+
+const result = await sabi.prompts.run("classify", {
+  ticket_text: "I was overcharged for my subscription",
+});
+\`\`\`
+
+See the [docs](https://weysabi.co/docs/prompts) for more.
+`
+      );
+    }
+    p.log.step(`Created example prompts in ${promptsDir}/`);
   }
 
   const config: WeysabiConfig = {
@@ -157,8 +215,8 @@ export async function initCommand(): Promise<void> {
     ...(promptsDir ? { promptsDir } : {}),
   };
 
-  const path = saveConfig(config, resolve(projectDir, "sabi.json"));
-  p.note(`Config saved to ${path}`, "Done");
+  const configPath = saveConfig(config, resolve(projectDir, "sabi.json"));
+  p.note(`Config saved to ${configPath}`, "Done");
 
   if (Object.keys(newEnvValues).length > 0) {
     upsertEnvFile(projectDir, newEnvValues);
@@ -166,7 +224,29 @@ export async function initCommand(): Promise<void> {
   }
 
   ensureGitignore(projectDir);
-  p.log.step("Added credentials, local Sabi data, and config to .gitignore");
+  p.log.step("Added Sabi entries to .gitignore");
 
-  p.outro("sabi is ready. Run `sabi config validate` to verify your keys.");
+  const shouldTest = await p.confirm({
+    message: "Test provider connectivity now?",
+    initialValue: true,
+  });
+  if (p.isCancel(shouldTest)) process.exit(0);
+
+  if (shouldTest) {
+    for (const [key, value] of Object.entries(newEnvValues)) {
+      process.env[key] = value;
+    }
+    const { testProvider, statusIcon, providerLabel } = await import("../utils");
+    const s = p.spinner();
+    const names = Object.keys(providers);
+    for (const name of names) {
+      s.start(`Testing ${providerLabel(name)}...`);
+      const result = await testProvider(name, providers[name]!);
+      s.stop(
+        `${statusIcon(result.ok)} ${providerLabel(name)} — ${result.ok ? `${result.latencyMs}ms` : result.error}`
+      );
+    }
+  }
+
+  p.outro("sabi is ready. Run `sabi config validate` to re-test.");
 }
