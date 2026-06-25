@@ -54,7 +54,7 @@ Tests live next to source: `src/*.test.ts`.
 
 - **No `export default`** — named exports only
 - **Zod** for all runtime validation
-- **Custom error classes** extend `SabiError`
+- **Custom error classes** extend `WeysabiError`
 - **Tests mock `globalThis.fetch`** — no real API calls
 - **Sub-path exports** in `package.json` for each adapter
 - **Structured logging** via `createModuleLogger("module.name")` from `@joinremba/catalog`

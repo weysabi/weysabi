@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Prompt management API** — `PromptDefinition` type + `Prompt` class with typed messages, schema, model, temperature. `sabi.prompts.register()` / `registerMany()` for structured prompt registration. `sabi.prompts.run(id, input, overrides?)` renders and executes through the full provider pipeline. `@weysabi/client/prompts` sub-path export
+- **Prompt management API** — `PromptDefinition` type + `Prompt` class with typed messages, schema, model, temperature. `sabi.prompts.register()` / `registerMany()` for structured prompt registration. `sabi.prompts.run(id, input, overrides?)` renders and executes through the full provider pipeline. `@weysabi/sabi/prompts` sub-path export
 - **Weysabi Server** — `sabi server --port 3000` CLI command starts an OpenAI-compatible HTTP server. `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`. Supports streaming SSE and non-streaming JSON. `createServer(sabi)` programmatic API. `@weysabi/server` sub-path export
 - **CLI init improvements** — model suggestions per provider, example prompt file scaffolding (classify, translate), automatic `.sabi/` entry in `.gitignore`
 - **`SabiOptions.promptDefinitions`** — register initial prompts at construction time
@@ -29,7 +29,7 @@
 - **ChatAdapter interface** — public interface, users write ~20 lines for any API. Ships OpenAI + Anthropic examples
 - **`sabi/chat` exports** — `ChatSDK`, `OpenAIAdapter`, `AnthropicAdapter`, `ChatAdapter` type
 - **Per-provider timeout & retry** — `ProviderConfig` accepts `timeout` and `retry` (statusCodes, maxRetries, backoffMs) that override global defaults per provider
-- **`sabi/chat` sub-path export** — `import { ConversationMemory, SqliteSessionStore, PgSessionStore } from "@weysabi/client/chat"`
+- **`sabi/chat` sub-path export** — `import { ConversationMemory, SqliteSessionStore, PgSessionStore } from "@weysabi/sabi/chat"`
 - **Pluggable store architecture** — `ConversationMemory` accepts any `StoreInterface` implementation
 - **Session store** — `SqliteSessionStore` (SQLite) and `PgSessionStore` (Postgres) implementing shared `StoreInterface`
 - **`postgres` peer dependency** — install when using `PgSessionStore`
@@ -43,4 +43,4 @@
 - **Streaming ingestion** — `loadStream()` async generator yielding granular progress events
 - **Object store abstraction** — `FsObjectStore`, `SqliteObjectStore`, BYO interface
 - **WAL-mode SQLite** with 64MB cache, mmap, 64KB pages, configurable pragmas
-- **`sabi/rag` sub-path export** — `import { RagEngine, RagManager, HnswVectorIndex } from "@weysabi/client/rag"`
+- **`sabi/rag` sub-path export** — `import { RagEngine, RagManager, HnswVectorIndex } from "@weysabi/sabi/rag"`

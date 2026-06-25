@@ -4,10 +4,11 @@ import type { SessionInfo, StoredMessage, StoreInterface } from "./types";
 
 export class PgSessionStore implements StoreInterface {
   private sql: postgres.Sql;
+  private ready: Promise<void>;
 
   constructor(sql: postgres.Sql) {
     this.sql = sql;
-    this.initSchema();
+    this.ready = this.initSchema();
   }
 
   private async initSchema(): Promise<void> {
@@ -38,6 +39,7 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async createSession(id?: string, system?: string): Promise<SessionInfo> {
+    await this.ready;
     id = id ?? generateId(16);
     const now = new Date();
     await this.sql`
@@ -55,6 +57,7 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async getSession(sessionId: string): Promise<SessionInfo | null> {
+    await this.ready;
     const rows = await this.sql<Array<Record<string, unknown>>>`
       SELECT id, system, created_at, updated_at, message_count, total_tokens
       FROM chat_sessions WHERE id = ${sessionId}
@@ -72,6 +75,7 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async getOrCreateSession(sessionId: string, system?: string): Promise<SessionInfo> {
+    await this.ready;
     const existing = await this.getSession(sessionId);
     if (existing) {
       if (system && existing.system !== system) {
@@ -85,6 +89,7 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async updateSessionSystem(sessionId: string, system: string): Promise<void> {
+    await this.ready;
     await this.sql`
       UPDATE chat_sessions SET system = ${system}, updated_at = NOW() WHERE id = ${sessionId}
     `;
@@ -96,21 +101,25 @@ export class PgSessionStore implements StoreInterface {
     content: string,
     tokens: number
   ): Promise<StoredMessage> {
+    await this.ready;
     const id = generateId(16);
     const now = new Date();
-    await this.sql`
-      INSERT INTO chat_messages (id, session_id, role, content, tokens, created_at)
-      VALUES (${id}, ${sessionId}, ${role}, ${content}, ${tokens}, ${now})
-    `;
-    await this.sql`
-      UPDATE chat_sessions
-      SET message_count = message_count + 1, total_tokens = total_tokens + ${tokens}, updated_at = ${now}
-      WHERE id = ${sessionId}
-    `;
+    await this.sql.begin(async (sql) => {
+      await sql`
+        INSERT INTO chat_messages (id, session_id, role, content, tokens, created_at)
+        VALUES (${id}, ${sessionId}, ${role}, ${content}, ${tokens}, ${now})
+      `;
+      await sql`
+        UPDATE chat_sessions
+        SET message_count = message_count + 1, total_tokens = total_tokens + ${tokens}, updated_at = ${now}
+        WHERE id = ${sessionId}
+      `;
+    });
     return { id, sessionId, role, content, tokens, createdAt: now.toISOString() };
   }
 
   async getHistory(sessionId: string): Promise<StoredMessage[]> {
+    await this.ready;
     type Row = {
       id: string;
       session_id: string;
@@ -135,11 +144,15 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    await this.sql`DELETE FROM chat_messages WHERE session_id = ${sessionId}`;
-    await this.sql`DELETE FROM chat_sessions WHERE id = ${sessionId}`;
+    await this.ready;
+    await this.sql.begin(async (sql) => {
+      await sql`DELETE FROM chat_messages WHERE session_id = ${sessionId}`;
+      await sql`DELETE FROM chat_sessions WHERE id = ${sessionId}`;
+    });
   }
 
   async listSessions(limit = 50, offset = 0): Promise<SessionInfo[]> {
+    await this.ready;
     type Row = {
       id: string;
       system: string | null;
@@ -163,6 +176,7 @@ export class PgSessionStore implements StoreInterface {
   }
 
   async close(): Promise<void> {
+    await this.ready;
     await this.sql.end();
   }
 }

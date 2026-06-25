@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { unlinkSync } from "fs";
 import { RagStore } from "./store";
 import { generateId } from "../utils";
+import type { ObjectStore } from "./object-store";
 
 const TEST_DB = ".sabi/test-rag-store.db";
 
@@ -56,7 +57,7 @@ describe("RagStore", () => {
     expect(store.hasFile("/test/doc.md", "different")).toBe(false);
   });
 
-  it("inserts chunks with embeddings", () => {
+  it("inserts chunks with embeddings", async () => {
     const fileId = "f1";
     store.insertFile({
       id: fileId,
@@ -66,7 +67,7 @@ describe("RagStore", () => {
     });
 
     const embedding = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5]);
-    store.insertChunks([
+    await store.insertChunks([
       {
         id: "c1",
         fileId,
@@ -90,7 +91,7 @@ describe("RagStore", () => {
       createdAt: new Date().toISOString(),
     });
 
-    store.insertChunks([
+    await store.insertChunks([
       {
         id: "c1",
         fileId,
@@ -116,7 +117,7 @@ describe("RagStore", () => {
     expect(results[0]!.id).toBe("c1");
   });
 
-  it("deletes a file and its chunks", () => {
+  it("deletes a file and its chunks", async () => {
     const fileId = "f1";
     store.insertFile({
       id: fileId,
@@ -124,7 +125,7 @@ describe("RagStore", () => {
       contentHash: "abc",
       createdAt: new Date().toISOString(),
     });
-    store.insertChunks([
+    await store.insertChunks([
       {
         id: "c1",
         fileId,
@@ -139,5 +140,74 @@ describe("RagStore", () => {
     store.deleteFile(fileId);
     expect(store.totalFiles()).toBe(0);
     expect(store.totalChunks()).toBe(0);
+  });
+});
+
+describe("RagStore object-store persistence", () => {
+  it("waits for object content to persist before committing chunk metadata", async () => {
+    const dbPath = `.sabi/test-rag-object-${generateId()}.db`;
+    let releasePut: (() => void) | undefined;
+    const objects = new Map<string, Uint8Array>();
+    const objectStore: ObjectStore = {
+      async get(key) {
+        return objects.get(key) ?? null;
+      },
+      async put(key, data) {
+        await new Promise<void>((resolve) => {
+          releasePut = resolve;
+        });
+        objects.set(key, data);
+      },
+      async delete(key) {
+        objects.delete(key);
+      },
+      async has(key) {
+        return objects.has(key);
+      },
+      async *list() {
+        yield* objects.keys();
+      },
+    };
+    const objectBacked = new RagStore({
+      dbPath,
+      objectStore,
+      storeContentInObjectStore: true,
+    });
+
+    try {
+      objectBacked.insertFile({
+        id: "file",
+        path: "/test/object.md",
+        contentHash: "hash",
+        createdAt: new Date().toISOString(),
+      });
+      const pending = objectBacked.insertChunks([
+        {
+          id: "chunk",
+          fileId: "file",
+          filePath: "/test/object.md",
+          chunkIndex: 0,
+          content: "stored remotely",
+          tokens: 2,
+          embedding: new Float32Array([1, 0]),
+        },
+      ]);
+
+      await Promise.resolve();
+      expect(objectBacked.totalChunks()).toBe(0);
+      releasePut?.();
+      await pending;
+      expect(objectBacked.totalChunks()).toBe(1);
+      expect(objects.has("chunks/chunk")).toBe(true);
+    } finally {
+      objectBacked.close();
+      for (const suffix of ["", "-wal", "-shm", ".hnsw.idx", ".hnsw.vec"]) {
+        try {
+          unlinkSync(dbPath + suffix);
+        } catch {
+          /* best effort */
+        }
+      }
+    }
   });
 });

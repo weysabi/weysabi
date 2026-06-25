@@ -118,6 +118,62 @@ describe("stream", () => {
     expect(attempts).toBe(2);
   });
 
+  it("does not mix fallback output after the primary stream emitted content", async () => {
+    let attempts = 0;
+    setFetch(async () => {
+      attempts++;
+      if (attempts > 1) {
+        return sseResponse(
+          `data: {"choices":[{"delta":{"content":"fallback"},"index":0}]}`,
+          `data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}`
+        );
+      }
+
+      const encoder = new TextEncoder();
+      let sent = false;
+      return new Response(
+        new ReadableStream({
+          async pull(controller) {
+            if (!sent) {
+              sent = true;
+              controller.enqueue(
+                encoder.encode(`data: {"choices":[{"delta":{"content":"partial"},"index":0}]}\n\n`)
+              );
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            controller.error(new Error("connection lost"));
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      );
+    });
+
+    const sabi = createWeysabi(
+      {
+        groq: { apiKey: "key" },
+        nvidia: { apiKey: "key2" },
+      },
+      { retry: { maxRetries: 0 } }
+    );
+
+    const chunks: string[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of sabi.stream({
+          model: "groq/llama-4-scout",
+          messages: [{ role: "user", content: "hi" }],
+          fallbacks: ["nvidia/llama-3.1-8b-instruct"],
+        })) {
+          chunks.push(chunk.content);
+        }
+      })()
+    ).rejects.toThrow("fallback was not attempted");
+
+    expect(chunks).toEqual(["partial"]);
+    expect(attempts).toBe(1);
+  });
+
   it("throws AllModelsFailedError when all providers fail", async () => {
     setFetch(async () => errorResponse(503));
 

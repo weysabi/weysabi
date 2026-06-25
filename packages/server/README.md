@@ -1,11 +1,11 @@
 # @weysabi/server
 
-OpenAI-compatible HTTP server for `@weysabi/client`. Runs as a drop-in replacement for the OpenAI API — same endpoints, same request/response format, but routes through Weysabi's provider failover, circuit breaker, and retry logic.
+OpenAI-compatible HTTP server for `@weysabi/sabi`. It exposes OpenAI-style endpoints while routing requests through Weysabi's provider failover, circuit breaker, and retry logic.
 
 ## Usage
 
 ```ts
-import { createWeysabi } from "@weysabi/client";
+import { createWeysabi } from "@weysabi/sabi";
 import { createServer } from "@weysabi/server";
 
 const sabi = createWeysabi({

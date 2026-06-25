@@ -162,7 +162,7 @@ export class RagEngine {
         contentHash: file.contentHash,
         createdAt: new Date().toISOString(),
       });
-      this.store.insertChunks(ragChunks);
+      await this.store.insertChunks(ragChunks);
 
       results.push({
         fileId,
@@ -263,7 +263,7 @@ export class RagEngine {
           contentHash: file.contentHash,
           createdAt: new Date().toISOString(),
         });
-        this.store.insertChunks(ragChunks);
+        await this.store.insertChunks(ragChunks);
 
         yield {
           type: "file_done",

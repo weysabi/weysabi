@@ -636,6 +636,7 @@ class WeysabiImpl implements Weysabi {
         continue;
       }
 
+      let emitted = false;
       try {
         const streamIterable = await client.stream(modelId, messages, {
           temperature: parsed.temperature,
@@ -652,12 +653,25 @@ class WeysabiImpl implements Weysabi {
         });
 
         for await (const chunk of streamIterable) {
+          emitted = true;
           yield chunk;
           if (chunk.done) return;
         }
         return;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
+        if (emitted) {
+          this.log.error({
+            message: `Stream interrupted after output from ${fullModel}`,
+            model: fullModel,
+            error: errorMessage,
+          });
+          throw new WeysabiError(
+            `Stream interrupted after ${fullModel} emitted output; fallback was not attempted`,
+            { cause: err }
+          );
+        }
+
         this.log.warn({
           message: `Stream failover from ${fullModel}`,
           model: fullModel,

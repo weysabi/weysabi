@@ -48,6 +48,22 @@ Text: {text}
 Translation:`,
 };
 
+export function ensureGitignore(projectDir: string): void {
+  const gitignorePath = resolve(projectDir, ".gitignore");
+  const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+  const entries = new Set(
+    current
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+  const additions = [".sabi/", "sabi.json"].filter((entry) => !entries.has(entry));
+  if (additions.length === 0) return;
+
+  const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+  writeFileSync(gitignorePath, `${current}${prefix}${additions.join("\n")}\n`, "utf-8");
+}
+
 export async function initCommand(): Promise<void> {
   p.intro("sabi init");
 
@@ -122,14 +138,8 @@ export async function initCommand(): Promise<void> {
   const path = saveConfig(config, resolve(projectDir, "sabi.json"));
   p.note(`Config saved to ${path}`, "Done");
 
-  const gitignorePath = resolve(projectDir, ".gitignore");
-  if (existsSync(gitignorePath)) {
-    const content = readFileSync(gitignorePath, "utf-8");
-    if (!content.includes(".sabi/")) {
-      writeFileSync(gitignorePath, content + "\n.sabi/\n", "utf-8");
-      p.log.step("Added .sabi/ to .gitignore");
-    }
-  }
+  ensureGitignore(projectDir);
+  p.log.step("Added local Sabi data and config to .gitignore");
 
   p.outro("sabi is ready. Run `sabi config validate` to verify your keys.");
 }

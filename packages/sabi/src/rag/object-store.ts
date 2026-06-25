@@ -8,7 +8,7 @@ import {
   readdirSync,
   statSync,
 } from "fs";
-import { join, resolve, dirname, relative } from "path";
+import { join, resolve, dirname, relative, isAbsolute, sep } from "path";
 
 export interface ObjectStore {
   get(key: string): Promise<Uint8Array | null>;
@@ -29,9 +29,9 @@ export class FsObjectStore implements ObjectStore {
   }
 
   private path(key: string): string {
-    const p = join(this.baseDir, key);
-    const resolved = resolve(p);
-    if (!resolved.startsWith(this.baseDir)) {
+    const resolved = resolve(this.baseDir, key);
+    const rel = relative(this.baseDir, resolved);
+    if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
       throw new Error(`ObjectStore key escapes base directory: ${key}`);
     }
     return resolved;
@@ -88,6 +88,9 @@ export class SqliteObjectStore implements ObjectStore {
   private tableName: string;
 
   constructor(db: Database, tableName: string = "objects") {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(tableName)) {
+      throw new Error(`Invalid SQLite object store table name: ${tableName}`);
+    }
     this.db = db;
     this.tableName = tableName;
     this.db.run(

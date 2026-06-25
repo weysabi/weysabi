@@ -111,6 +111,23 @@ describe("anthropic provider", () => {
     expect(sentBody.system).toBe("Be concise");
     expect(sentBody.messages).toEqual([{ role: "user", content: [{ type: "text", text: "Hi" }] }]);
   });
+
+  it("does not send OpenAI response_format to Anthropic", async () => {
+    let sentBody: Record<string, unknown> = {};
+    setFetch(async (_url, init) => {
+      sentBody = JSON.parse(init?.body as string);
+      return okResponse({ content: [{ type: "text", text: "{}" }] });
+    });
+
+    const client = new ProviderClient("anthropic", { apiKey: "sk-ant-abc" }, opts);
+    await client.complete(
+      "claude-3-5-sonnet-20241022",
+      [{ role: "user", content: "Return JSON" }],
+      { ...defaultParams, responseFormat: { type: "json_object" } }
+    );
+
+    expect(sentBody.response_format).toBeUndefined();
+  });
 });
 
 describe("google provider", () => {

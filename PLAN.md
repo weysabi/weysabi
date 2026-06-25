@@ -1,7 +1,7 @@
 # Weysabi — Product Plan
 
 **Repository**: `github.com/weysabi/sabi`
-**Package**: `@weysabi/client`
+**Package**: `@weysabi/sabi`
 **Domain**: `weysabi.co`
 
 ## Vision
@@ -12,7 +12,7 @@ For fullstack devs who don't have an ML team. You know your stack (TypeScript, R
 
 ## Core Philosophy
 
-- **Single dependency.** Not LangChain + Pinecone + provider SDKs + eval framework. Just `@weysabi/client`.
+- **Single dependency.** Not LangChain + Pinecone + provider SDKs + eval framework. Just `@weysabi/sabi`.
 - **Your keys, your providers.** Weysabi never marks up tokens. You pay OpenAI/Groq/Anthropic directly. Weysabi charges for orchestration — versioning, evals, monitoring, team sync.
 - **Zero config for common cases.** RAG? Point at a PDF. Structured output? Pass a Zod schema.
 - **Works offline-first.** No cloud required. Cloud adds versioning, evals, monitoring, team.
@@ -126,7 +126,7 @@ The orchestration layer is the moat. By the time hosted inference launches, user
 - [x] `sabi.prompts.run(id, input, overrides?)` — render + execute through full provider pipeline
 - [x] `Prompt.render(input)` — renders `{variable}` in message content
 - [x] `PromptDefinitionSchema` — Zod validation for prompt definitions
-- [x] `@weysabi/client/prompts` sub-path export
+- [x] `@weysabi/sabi/prompts` sub-path export
 - [x] Backward compatible — `sabi.prompt()` / `sabi.render()` continue working
 - [x] Initial prompt definitions via `SabiOptions.promptDefinitions`
 - [ ] File-based `.prompt.yaml` loading (deferred — see PHASES.md)
@@ -201,7 +201,7 @@ Cencori routes through their gateway and charges per token. Weysabi is an orches
 ## Package Structure
 
 ```
-@weysabi/client/
+@weysabi/sabi/
 ├── src/
 │   ├── index.ts                 # WeysabiImpl class + createWeysabi() factory
 │   ├── index.test.ts            # Core tests
@@ -280,7 +280,7 @@ Single package. Sub-path exports for adapters. Cloud features runtime-gated by A
 
 - **Name**: Weysabi (Nigerian Pidgin — "wey sabi" = "the one who knows")
 - **Org**: `github.com/weysabi` — separate from joinremba
-- **One package**: `@weysabi/client`. Adapters loaded via sub-path exports (zero cost if unused)
+- **One package**: `@weysabi/sabi`. Adapters loaded via sub-path exports (zero cost if unused)
 - **BYOK**: No token markup. Revenue from cloud features
 - **Open-core**: Library always free. Cloud gated by API key
 - **Tests next to source**: `src/*.test.ts` pattern (same as catalog, beacon, gate)

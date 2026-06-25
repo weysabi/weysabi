@@ -7,8 +7,9 @@ import {
   providerLabel,
   saveConfig,
 } from "./utils";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { resolve } from "path";
+import { ensureGitignore } from "./commands/init";
 
 describe("providerLabel", () => {
   it("returns display name for known providers", () => {
@@ -171,6 +172,36 @@ describe("loadConfig / saveConfig", () => {
     const result = loadConfig();
     expect(result).toBeNull();
     process.cwd = origCwd;
+  });
+});
+
+describe("ensureGitignore", () => {
+  it("creates a gitignore that excludes local config and data", () => {
+    const tmpDir = mkdtempSync("sabi-gitignore-");
+    try {
+      ensureGitignore(tmpDir);
+      const content = readFileSync(resolve(tmpDir, ".gitignore"), "utf-8");
+      expect(content).toContain(".sabi/");
+      expect(content).toContain("sabi.json");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves existing entries without adding duplicates", () => {
+    const tmpDir = mkdtempSync("sabi-gitignore-");
+    try {
+      const path = resolve(tmpDir, ".gitignore");
+      writeFileSync(path, "node_modules\n.sabi/\n", "utf-8");
+      ensureGitignore(tmpDir);
+      ensureGitignore(tmpDir);
+      const content = readFileSync(path, "utf-8");
+      expect(content.match(/\.sabi\//gu)).toHaveLength(1);
+      expect(content.match(/sabi\.json/gu)).toHaveLength(1);
+      expect(content).toContain("node_modules");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

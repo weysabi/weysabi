@@ -218,7 +218,7 @@ export class RagStore {
       .run(file.id, file.path, file.contentHash, file.createdAt);
   }
 
-  insertChunks(chunks: RagChunk[]): void {
+  async insertChunks(chunks: RagChunk[]): Promise<void> {
     const insert = this.db.prepare(
       `INSERT OR REPLACE INTO chunks (id, file_id, chunk_index, content, tokens, embedding) VALUES (?, ?, ?, ?, ?, ?)`
     );
@@ -228,31 +228,46 @@ export class RagStore {
         )
       : null;
 
-    this.db.transaction(() => {
-      for (const chunk of chunks) {
-        const embeddingBlob = chunk.embedding ? Buffer.from(chunk.embedding.buffer) : null;
-
-        if (this.storeContentInObjectStore && this.objectStore && insertLocation) {
+    const storedKeys: string[] = [];
+    try {
+      if (this.storeContentInObjectStore && this.objectStore) {
+        for (const chunk of chunks) {
           const storeKey = chunkContentKey(chunk.id);
-          insert.run(chunk.id, chunk.fileId, chunk.chunkIndex, null, chunk.tokens, embeddingBlob);
-          insertLocation.run(chunk.id, storeKey);
-          this.objectStore.put(storeKey, new TextEncoder().encode(chunk.content));
-        } else {
-          insert.run(
-            chunk.id,
-            chunk.fileId,
-            chunk.chunkIndex,
-            chunk.content,
-            chunk.tokens,
-            embeddingBlob
-          );
-        }
-
-        if (this.vectorIndex && chunk.embedding) {
-          this.vectorIndex.add(chunk.id, chunk.embedding);
+          await this.objectStore.put(storeKey, new TextEncoder().encode(chunk.content));
+          storedKeys.push(storeKey);
         }
       }
-    })();
+
+      this.db.transaction(() => {
+        for (const chunk of chunks) {
+          const embeddingBlob = chunk.embedding ? Buffer.from(chunk.embedding.buffer) : null;
+
+          if (this.storeContentInObjectStore && this.objectStore && insertLocation) {
+            const storeKey = chunkContentKey(chunk.id);
+            insert.run(chunk.id, chunk.fileId, chunk.chunkIndex, null, chunk.tokens, embeddingBlob);
+            insertLocation.run(chunk.id, storeKey);
+          } else {
+            insert.run(
+              chunk.id,
+              chunk.fileId,
+              chunk.chunkIndex,
+              chunk.content,
+              chunk.tokens,
+              embeddingBlob
+            );
+          }
+
+          if (this.vectorIndex && chunk.embedding) {
+            this.vectorIndex.add(chunk.id, chunk.embedding);
+          }
+        }
+      })();
+    } catch (error) {
+      if (this.objectStore) {
+        await Promise.allSettled(storedKeys.map((key) => this.objectStore!.delete(key)));
+      }
+      throw error;
+    }
 
     this.incIndexVersion();
 
