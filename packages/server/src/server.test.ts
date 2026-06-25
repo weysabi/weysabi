@@ -116,11 +116,11 @@ describe("translateStreamChunk", () => {
     expect(line).toBe("data: [DONE]\n\n");
   });
 
-  it("includes usage in final chunk and appends [DONE]", () => {
+  it("includes usage in a done chunk and appends [DONE]", () => {
     const line = translateStreamChunk(
       {
-        content: "Done",
-        done: false,
+        content: "",
+        done: true,
         usage: { promptTokens: 5, completionTokens: 10, totalTokens: 15 },
       },
       "groq/llama-4-scout"
@@ -131,7 +131,12 @@ describe("translateStreamChunk", () => {
     const dataPart = parts[0]!;
     expect(dataPart).toStartWith("data: ");
     const parsed = JSON.parse(dataPart.slice(6));
-    expect(parsed.choices[0].finish_reason).toBe("stop");
+    expect(parsed.choices).toEqual([]);
+    expect(parsed.usage).toEqual({
+      prompt_tokens: 5,
+      completion_tokens: 10,
+      total_tokens: 15,
+    });
   });
 });
 

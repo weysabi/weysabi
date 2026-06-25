@@ -20,9 +20,15 @@ import { ollamaHandler } from "./providers/ollama";
 function noop(): void {}
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
   anthropic: "https://api.anthropic.com",
   google: "https://generativelanguage.googleapis.com",
   mistral: "https://api.mistral.ai/v1",
+  deepseek: "https://api.deepseek.com/v1",
+  together: "https://api.together.xyz/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
   ollama: "http://localhost:11434",
 };
 
@@ -207,7 +213,7 @@ export class ProviderClient {
       toolChoice?: string;
     }
   ): Promise<ProviderCallResult> {
-    const url = this.handler.buildUrl(this.baseUrl, modelId);
+    const url = this.handler.buildUrl(this.baseUrl, modelId, false);
     const headers = this.handler.buildHeaders(this.apiKey);
     const body = this.handler.buildBody(modelId, messages, {
       ...params,
@@ -335,7 +341,7 @@ export class ProviderClient {
       timestamp: Date.now(),
     });
 
-    const url = this.handler.buildUrl(this.baseUrl, modelId);
+    const url = this.handler.buildUrl(this.baseUrl, modelId, true);
     const headers = this.handler.buildHeaders(this.apiKey);
     const body = this.handler.buildBody(modelId, messages, {
       ...params,

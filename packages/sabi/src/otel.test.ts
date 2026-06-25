@@ -153,4 +153,41 @@ describe("createOtelPlugin", () => {
     expect(spanEnded).toBe(true);
     expect(recordedException).toBeDefined();
   });
+
+  it("ends a span when a stream completes successfully", async () => {
+    setFetch(
+      async () =>
+        new Response(
+          `data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n`,
+          { status: 200, headers: { "content-type": "text/event-stream" } }
+        )
+    );
+
+    let spanEnded = false;
+    const fakeSpan: OtelSpan = {
+      setAttribute(_key, _value) {},
+      end() {
+        spanEnded = true;
+      },
+      recordException(_error: Error) {},
+      setStatus(_status: { code: number; message?: string }) {},
+    };
+    const fakeTracer: OtelTracer = {
+      startSpan() {
+        return fakeSpan;
+      },
+    };
+
+    const sabi = createWeysabi({ groq: { apiKey: "key" } });
+    sabi.use(createOtelPlugin({ tracer: fakeTracer }));
+
+    for await (const _chunk of sabi.stream({
+      model: "groq/llama-4-scout",
+      messages: [{ role: "user", content: "hi" }],
+    })) {
+      // consume
+    }
+
+    expect(spanEnded).toBe(true);
+  });
 });

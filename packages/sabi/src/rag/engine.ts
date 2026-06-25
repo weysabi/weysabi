@@ -121,12 +121,6 @@ export class RagEngine {
       }
 
       const fileId = generateId();
-      this.store.insertFile({
-        id: fileId,
-        path: file.path,
-        contentHash: file.contentHash,
-        createdAt: new Date().toISOString(),
-      });
 
       const chunks = splitText(file.content, this.options.chunkSize, this.options.chunkOverlap);
       const ragChunks: RagChunk[] = [];
@@ -162,6 +156,12 @@ export class RagEngine {
         ragChunks[i]!.embedding = allEmbeddings[i]!;
       }
 
+      this.store.insertFile({
+        id: fileId,
+        path: file.path,
+        contentHash: file.contentHash,
+        createdAt: new Date().toISOString(),
+      });
       this.store.insertChunks(ragChunks);
 
       results.push({
@@ -215,12 +215,6 @@ export class RagEngine {
 
       try {
         const fileId = generateId();
-        this.store.insertFile({
-          id: fileId,
-          path: file.path,
-          contentHash: file.contentHash,
-          createdAt: new Date().toISOString(),
-        });
 
         const chunks = splitText(file.content, this.options.chunkSize, this.options.chunkOverlap);
         yield { type: "chunk", filePath: file.path, chunks: chunks.length };
@@ -263,6 +257,12 @@ export class RagEngine {
           ragChunks[i]!.embedding = allEmbeddings[i]!;
         }
 
+        this.store.insertFile({
+          id: fileId,
+          path: file.path,
+          contentHash: file.contentHash,
+          createdAt: new Date().toISOString(),
+        });
         this.store.insertChunks(ragChunks);
 
         yield {

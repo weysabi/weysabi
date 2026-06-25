@@ -90,6 +90,27 @@ describe("anthropic provider", () => {
 
     expect((sentBody as Record<string, unknown>).max_tokens).toBe(1024);
   });
+
+  it("sends system messages through the Anthropic system field", async () => {
+    let sentBody: Record<string, unknown> = {};
+    setFetch(async (_url, init) => {
+      sentBody = JSON.parse(init?.body as string);
+      return okResponse({ content: [{ type: "text", text: "OK" }] });
+    });
+
+    const client = new ProviderClient("anthropic", { apiKey: "sk-ant-abc" }, opts);
+    await client.complete(
+      "claude-3-5-sonnet-20241022",
+      [
+        { role: "system", content: "Be concise" },
+        { role: "user", content: "Hi" },
+      ],
+      defaultParams
+    );
+
+    expect(sentBody.system).toBe("Be concise");
+    expect(sentBody.messages).toEqual([{ role: "user", content: [{ type: "text", text: "Hi" }] }]);
+  });
 });
 
 describe("google provider", () => {
@@ -146,7 +167,7 @@ describe("google provider", () => {
     expect(contents[1]?.role).toBe("model");
   });
 
-  it("does not include api key in Authorization header", async () => {
+  it("sends the API key in the Google API key header", async () => {
     let sentHeaders: Record<string, string> = {};
     setFetch(async (_url, init) => {
       sentHeaders = (init?.headers ?? {}) as Record<string, string>;
@@ -160,6 +181,37 @@ describe("google provider", () => {
 
     expect(sentHeaders["Authorization"]).toBeUndefined();
     expect(sentHeaders["Content-Type"]).toBe("application/json");
+    expect(sentHeaders["x-goog-api-key"]).toBe("AIza-abc");
+  });
+
+  it("uses systemInstruction and the streaming endpoint", async () => {
+    let sentUrl = "";
+    let sentBody: Record<string, unknown> = {};
+    setFetch(async (url, init) => {
+      sentUrl = url.toString();
+      sentBody = JSON.parse(init?.body as string);
+      return new Response(
+        `data: {"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}\n\ndata: {"candidates":[{"finishReason":"STOP"}]}\n\n`,
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      );
+    });
+
+    const client = new ProviderClient("google", { apiKey: "AIza-abc" }, opts);
+    const chunks: string[] = [];
+    const stream = await client.stream(
+      "gemini-2.0-flash",
+      [
+        { role: "system", content: "Be concise" },
+        { role: "user", content: "Hi" },
+      ],
+      defaultParams
+    );
+    for await (const chunk of stream) chunks.push(chunk.content);
+
+    expect(sentUrl).toEndWith("/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse");
+    expect(sentBody.systemInstruction).toEqual({ parts: [{ text: "Be concise" }] });
+    expect(sentBody.contents).toEqual([{ role: "user", parts: [{ text: "Hi" }] }]);
+    expect(sentBody.stream).toBeUndefined();
   });
 });
 
@@ -174,7 +226,7 @@ describe("provider dispatch", () => {
     const client = new ProviderClient("groq", { apiKey: "gsk_abc" }, opts);
     await client.complete("llama-4-scout", [{ role: "user", content: "Hi" }], defaultParams);
 
-    expect(sentUrl).toContain("/chat/completions");
+    expect(sentUrl).toBe("https://api.groq.com/openai/v1/chat/completions");
   });
 
   it("uses openai handler for deepseek", async () => {
@@ -187,7 +239,29 @@ describe("provider dispatch", () => {
     const client = new ProviderClient("deepseek", { apiKey: "sk-abc" }, opts);
     await client.complete("deepseek-chat", [{ role: "user", content: "Hi" }], defaultParams);
 
-    expect(sentUrl).toContain("/chat/completions");
+    expect(sentUrl).toBe("https://api.deepseek.com/v1/chat/completions");
+  });
+
+  it("uses each provider's default OpenAI-compatible base URL", async () => {
+    const expected: Record<string, string> = {
+      openai: "https://api.openai.com/v1/chat/completions",
+      together: "https://api.together.xyz/v1/chat/completions",
+      nvidia: "https://integrate.api.nvidia.com/v1/chat/completions",
+      openrouter: "https://openrouter.ai/api/v1/chat/completions",
+      mistral: "https://api.mistral.ai/v1/chat/completions",
+    };
+
+    for (const [provider, expectedUrl] of Object.entries(expected)) {
+      let sentUrl = "";
+      setFetch(async (url) => {
+        sentUrl = url.toString();
+        return okResponse({ choices: [{ message: { content: "OK" } }] });
+      });
+
+      const client = new ProviderClient(provider, { apiKey: "key" }, opts);
+      await client.complete("model", [{ role: "user", content: "Hi" }], defaultParams);
+      expect(sentUrl).toBe(expectedUrl);
+    }
   });
 
   it("works with sabi.complete for anthropic model", async () => {

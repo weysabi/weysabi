@@ -8,8 +8,9 @@ import { promptListCommand, promptAddCommand, promptRemoveCommand } from "./comm
 import { benchmarkCommand } from "./commands/benchmark";
 import { doctorCommand } from "./commands/doctor";
 import { serverCommand } from "./commands/server";
+import packageJson from "../../package.json" with { type: "json" };
 
-const version = "0.5.0";
+const version = packageJson.version;
 
 const program = new Command();
 

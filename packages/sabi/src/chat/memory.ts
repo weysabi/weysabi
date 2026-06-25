@@ -61,15 +61,20 @@ export class ConversationMemory {
     let total = 0;
     let truncated = false;
 
-    for (const msg of history) {
+    const selected: Array<{ role: string; content: string }> = [];
+
+    for (let index = history.length - 1; index >= 0; index--) {
+      const msg = history[index]!;
       if (total + msg.tokens > maxTokens) {
         truncated = true;
         break;
       }
-      target.push({ role: msg.role, content: msg.content });
+      selected.push({ role: msg.role, content: msg.content });
       total += msg.tokens;
     }
 
+    selected.reverse();
+    target.push(...selected);
     return truncated;
   }
 

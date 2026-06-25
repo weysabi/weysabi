@@ -132,8 +132,8 @@ describe("ConversationMemory", () => {
   it("truncates history when exceeding maxHistoryTokens", async () => {
     for (let i = 0; i < 5; i++) {
       await memory.record("trunc-test", {
-        userMessage: { content: "x".repeat(2000) },
-        assistantMessage: { content: "y".repeat(2000) },
+        userMessage: { content: `${i}:` + "x".repeat(1998) },
+        assistantMessage: { content: `${i}:` + "y".repeat(1998) },
       });
     }
 
@@ -144,6 +144,8 @@ describe("ConversationMemory", () => {
 
     expect(result.historyTruncated).toBe(true);
     expect(result.messages).toHaveLength(9);
+    expect(result.messages[0]!.content).toStartWith("1:");
+    expect(result.messages[7]!.content).toStartWith("4:");
     expect(await memory.getHistory("trunc-test")).toHaveLength(10);
   });
 

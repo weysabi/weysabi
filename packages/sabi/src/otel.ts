@@ -66,6 +66,14 @@ export function createOtelPlugin(options: OtelPluginOptions): Plugin {
       return request;
     },
 
+    onStreamEnd(request: StreamRequest): void {
+      const span = pendingSpans.get(request);
+      if (span) {
+        span.end();
+        pendingSpans.delete(request);
+      }
+    },
+
     onError(error: Error, context: { request: CompleteRequest | StreamRequest }): void {
       const span = pendingSpans.get(context.request);
       if (span) {

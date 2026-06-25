@@ -4,6 +4,8 @@ import type { ProviderCallResult, HandlerMessage, ToolCall } from "../types";
 function formatMessages(messages: HandlerMessage[]): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
   for (const m of messages) {
+    if (m.role === "system") continue;
+
     if (m.role === "tool") {
       const tm = m as { tool_call_id: string; content: string };
       const last = result[result.length - 1];
@@ -57,7 +59,7 @@ function formatTools(tools?: ToolDefInfo[]): Record<string, unknown>[] | undefin
 }
 
 export const anthropicHandler: ProviderHandler = {
-  buildUrl(baseUrl: string, _modelId: string) {
+  buildUrl(baseUrl: string, _modelId: string, _stream: boolean) {
     return `${baseUrl}/v1/messages`;
   },
 
@@ -70,11 +72,17 @@ export const anthropicHandler: ProviderHandler = {
   },
 
   buildBody(modelId: string, messages, params) {
+    const system = messages
+      .filter((message) => message.role === "system")
+      .map((message) => message.content ?? "")
+      .filter(Boolean)
+      .join("\n\n");
     const body: Record<string, unknown> = {
       model: modelId,
       messages: formatMessages(messages),
       max_tokens: params.maxTokens ?? 1024,
     };
+    if (system) body.system = system;
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.topP !== undefined) body.top_p = params.topP;
     if (params.stop !== undefined) body.stop = params.stop;

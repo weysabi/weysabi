@@ -39,7 +39,7 @@ function formatTools(tools?: ToolDefInfo[]): Record<string, unknown>[] | undefin
 }
 
 export const ollamaHandler: ProviderHandler = {
-  buildUrl(baseUrl: string, _modelId: string) {
+  buildUrl(baseUrl: string, _modelId: string, _stream: boolean) {
     return `${baseUrl}/api/chat`;
   },
 

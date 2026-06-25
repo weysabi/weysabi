@@ -2,14 +2,14 @@ FROM oven/bun:1 AS base
 WORKDIR /app
 
 COPY package.json bun.lock ./
-COPY packages/client/package.json packages/client/
+COPY packages/sabi/package.json packages/sabi/
 COPY packages/server/package.json packages/server/
 COPY packages/server/tsconfig.json packages/server/
 COPY tsconfig.json .
 
 RUN bun install --frozen-lockfile --production
 
-COPY packages/client/src packages/client/src
+COPY packages/sabi/src packages/sabi/src
 COPY packages/server/src packages/server/src
 
 ENV SABI_PORT=3000

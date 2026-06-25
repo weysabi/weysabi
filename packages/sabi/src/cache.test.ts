@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { createWeysabi } from "./index";
 import { InMemoryCache, RedisCache } from "./cache";
 import type { CompleteResponse } from "./types";
+import { cacheKey } from "./types";
+import { z } from "zod";
 
 function okResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -135,6 +137,58 @@ describe("sabi cache integration", () => {
     expect(r1.content).toBe("r1");
     expect(r2.content).toBe("r2");
     expect(callCount).toBe(2);
+  });
+
+  it("does not collide across prompt inputs, fallbacks, schema, tools, or RAG", () => {
+    const base = {
+      model: "groq/llama-3.1-8b-instant",
+      messages: [{ role: "user" as const, content: "hi" }],
+    };
+
+    const keys = [
+      cacheKey({ ...base, prompt: "summary", inputs: { text: "a" } }),
+      cacheKey({ ...base, prompt: "summary", inputs: { text: "b" } }),
+      cacheKey({ ...base, fallbacks: ["openai/gpt-4o-mini"] }),
+      cacheKey({ ...base, schema: z.object({ answer: z.string() }) }),
+      cacheKey({
+        ...base,
+        tools: [
+          {
+            name: "weather",
+            description: "Get weather",
+            parameters: { type: "object" },
+            execute: () => "sunny",
+          },
+        ],
+      }),
+      cacheKey({ ...base, rag: true }),
+    ];
+
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("runs response plugins on cache hits without caching transformed output", async () => {
+    let callCount = 0;
+    setFetch(async () => {
+      callCount++;
+      return okResponse({ choices: [{ message: { content: "raw" } }] });
+    });
+
+    const sabi = createWeysabi({ groq: { apiKey: "key" } }, { cache: new InMemoryCache() });
+    sabi.use({
+      name: "suffix",
+      onCompleteResponse(response) {
+        return { ...response, content: `${response.content}!` };
+      },
+    });
+
+    const request = {
+      model: "groq/llama-3.1-8b-instant",
+      messages: [{ role: "user" as const, content: "hi" }],
+    };
+    expect((await sabi.complete(request)).content).toBe("raw!");
+    expect((await sabi.complete(request)).content).toBe("raw!");
+    expect(callCount).toBe(1);
   });
 });
 

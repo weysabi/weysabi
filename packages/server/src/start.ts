@@ -1,7 +1,7 @@
 import { createWeysabi } from "@weysabi/sabi";
 import { createServer } from "./index";
-import { createServerConfig, validateOrExit } from "./config";
-import { resolveApiKeys, parseApiKeys } from "./middleware";
+import { validateOrExit } from "./config";
+import { parseApiKeys } from "./middleware";
 import { log } from "./logger";
 
 const PROVIDER_ENV_VARS: Record<string, string> = {

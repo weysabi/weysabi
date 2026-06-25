@@ -18,7 +18,7 @@ export async function pipe(
 
   try {
     for await (const chunk of stream) {
-      res.write(JSON.stringify(chunk) + "\n");
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       if (chunk.done) break;
     }
   } finally {

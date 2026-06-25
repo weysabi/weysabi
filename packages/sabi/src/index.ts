@@ -205,7 +205,9 @@ class WeysabiImpl implements Weysabi {
   }
 
   async complete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
-    let currentRequest: CompleteRequest = this.normalizeModels(request) as CompleteRequest;
+    let currentRequest: CompleteRequest = this.materializePrompt(
+      this.normalizeModels(request) as CompleteRequest
+    );
     for (const plugin of this.plugins) {
       if (plugin.onCompleteRequest) {
         currentRequest = (await plugin.onCompleteRequest(currentRequest)) as CompleteRequest;
@@ -218,7 +220,16 @@ class WeysabiImpl implements Weysabi {
         const key = cacheKey(currentRequest);
         const cached = await cache.get(key);
         if (cached) {
-          return cached as CompleteResponse<T>;
+          let response = cached as CompleteResponse<T>;
+          for (const plugin of this.plugins) {
+            if (plugin.onCompleteResponse) {
+              response = (await plugin.onCompleteResponse(
+                response,
+                currentRequest
+              )) as CompleteResponse<T>;
+            }
+          }
+          return response;
         }
       } catch {
         this.log.warn({ message: "Cache read failed, proceeding without cache" });
@@ -227,20 +238,20 @@ class WeysabiImpl implements Weysabi {
 
     try {
       let response = await this.runComplete<T>(currentRequest);
-      for (const plugin of this.plugins) {
-        if (plugin.onCompleteResponse) {
-          response = (await plugin.onCompleteResponse(
-            response,
-            currentRequest
-          )) as CompleteResponse<T>;
-        }
-      }
       if (cache) {
         try {
           const key = cacheKey(currentRequest);
           await cache.set(key, response);
         } catch {
           this.log.warn({ message: "Cache write failed, response delivered uncached" });
+        }
+      }
+      for (const plugin of this.plugins) {
+        if (plugin.onCompleteResponse) {
+          response = (await plugin.onCompleteResponse(
+            response,
+            currentRequest
+          )) as CompleteResponse<T>;
         }
       }
       return response;
@@ -577,7 +588,9 @@ class WeysabiImpl implements Weysabi {
   }
 
   async *stream(request: StreamRequest): AsyncIterable<StreamChunk> {
-    let currentRequest: StreamRequest = this.normalizeModels(request) as StreamRequest;
+    let currentRequest: StreamRequest = this.materializePrompt(
+      this.normalizeModels(request) as StreamRequest
+    );
     for (const plugin of this.plugins) {
       if (plugin.onStreamRequest) {
         currentRequest = (await plugin.onStreamRequest(currentRequest)) as StreamRequest;
@@ -592,6 +605,10 @@ class WeysabiImpl implements Weysabi {
         plugin.onError?.(error, { request: currentRequest });
       }
       throw err;
+    } finally {
+      for (const plugin of this.plugins) {
+        await plugin.onStreamEnd?.(currentRequest);
+      }
     }
   }
 
@@ -684,6 +701,16 @@ class WeysabiImpl implements Weysabi {
       } as Req & { model: string };
     }
     return request as Req & { model: string };
+  }
+
+  private materializePrompt<Req extends CompleteRequest | StreamRequest>(request: Req): Req {
+    if (request.prompt === undefined) return request;
+    return {
+      ...request,
+      messages: this.prompts.render(request.prompt, request.inputs ?? {}),
+      prompt: undefined,
+      inputs: undefined,
+    } as Req;
   }
 
   private resolveMessages(req: CompleteRequest | StreamRequest): HandlerMessage[] {

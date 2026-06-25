@@ -2,33 +2,35 @@ import type { ProviderHandler, ToolDefInfo } from "./handler";
 import type { ProviderCallResult, HandlerMessage, ToolCall } from "../types";
 
 function formatMessages(messages: HandlerMessage[]): Record<string, unknown>[] {
-  return messages.map((m) => {
-    if (m.role === "tool") {
-      const tm = m as { tool_call_id: string; content: string };
-      return {
-        role: "function",
-        parts: [
-          { functionResponse: { name: tm.tool_call_id, response: { response: tm.content } } },
-        ],
-      };
-    }
-    const msg = m as { role: string; content: string | null; tool_calls?: ToolCall[] };
-    const parts: Record<string, unknown>[] = [];
-    if (msg.content) {
-      parts.push({ text: msg.content });
-    }
-    if (msg.tool_calls && msg.tool_calls.length > 0) {
-      for (const tc of msg.tool_calls) {
-        parts.push({
-          functionCall: { name: tc.name, args: tryParse(tc.arguments) },
-        });
+  return messages
+    .filter((m) => m.role !== "system")
+    .map((m) => {
+      if (m.role === "tool") {
+        const tm = m as { tool_call_id: string; content: string };
+        return {
+          role: "function",
+          parts: [
+            { functionResponse: { name: tm.tool_call_id, response: { response: tm.content } } },
+          ],
+        };
       }
-    }
-    return {
-      role: msg.role === "assistant" ? "model" : msg.role,
-      parts,
-    };
-  });
+      const msg = m as { role: string; content: string | null; tool_calls?: ToolCall[] };
+      const parts: Record<string, unknown>[] = [];
+      if (msg.content) {
+        parts.push({ text: msg.content });
+      }
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+          parts.push({
+            functionCall: { name: tc.name, args: tryParse(tc.arguments) },
+          });
+        }
+      }
+      return {
+        role: msg.role === "assistant" ? "model" : msg.role,
+        parts,
+      };
+    });
 }
 
 function tryParse(json: string): Record<string, unknown> {
@@ -53,18 +55,30 @@ function formatTools(tools?: ToolDefInfo[]): Record<string, unknown>[] | undefin
 }
 
 export const googleHandler: ProviderHandler = {
-  buildUrl(baseUrl: string, modelId: string) {
-    return `${baseUrl}/v1beta/models/${modelId}:generateContent`;
+  buildUrl(baseUrl: string, modelId: string, stream: boolean) {
+    const method = stream ? "streamGenerateContent?alt=sse" : "generateContent";
+    return `${baseUrl}/v1beta/models/${modelId}:${method}`;
   },
 
-  buildHeaders(_apiKey: string) {
-    return { "Content-Type": "application/json" };
+  buildHeaders(apiKey: string) {
+    return {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    };
   },
 
   buildBody(_modelId: string, messages, params) {
     const contents = formatMessages(messages);
 
     const body: Record<string, unknown> = { contents };
+    const system = messages
+      .filter((message) => message.role === "system")
+      .map((message) => message.content ?? "")
+      .filter(Boolean)
+      .join("\n\n");
+    if (system) {
+      body.systemInstruction = { parts: [{ text: system }] };
+    }
 
     const config: Record<string, unknown> = {};
     if (params.temperature !== undefined) config.temperature = params.temperature;
@@ -76,10 +90,6 @@ export const googleHandler: ProviderHandler = {
 
     const tools = formatTools(params.tools);
     if (tools) body.tools = tools;
-
-    if (params.stream) {
-      body.stream = true;
-    }
 
     return body;
   },

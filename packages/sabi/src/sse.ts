@@ -4,7 +4,7 @@ export function toResponse(stream: AsyncIterable<StreamChunk>): Response {
   const readable = new ReadableStream({
     async start(controller) {
       for await (const chunk of stream) {
-        const data = JSON.stringify(chunk) + "\n";
+        const data = `data: ${JSON.stringify(chunk)}\n\n`;
         controller.enqueue(new TextEncoder().encode(data));
         if (chunk.done) break;
       }

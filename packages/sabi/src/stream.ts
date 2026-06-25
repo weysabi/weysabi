@@ -36,6 +36,17 @@ export async function* readStream(body: ReadableStream<Uint8Array>): AsyncIterab
 
         if (parsed === null) continue;
 
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          "content" in parsed &&
+          "done" in parsed
+        ) {
+          yield parsed as StreamChunk;
+          if ((parsed as StreamChunk).done) return;
+          continue;
+        }
+
         if (parsed.usage) {
           yield {
             content: "",

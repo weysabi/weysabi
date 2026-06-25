@@ -2,8 +2,8 @@ import type { Weysabi } from "@weysabi/sabi";
 import { AllModelsFailedError } from "@weysabi/sabi/errors";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
 import { createAuth, createRateLimiter, createIdempotency, resolveApiKeys } from "./middleware";
-import type { ApiKeyEntry, IdempotencyInstance } from "./middleware";
-import { ServerError, NotFoundError } from "./errors";
+import type { ApiKeyEntry } from "./middleware";
+import { ServerError } from "./errors";
 import { ok, fail, fromServerError } from "./responses";
 import { createModuleLogger } from "./logger";
 

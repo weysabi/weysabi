@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ModelPricing } from "./pricing";
+import { zodToJsonSchema } from "./utils";
 
 export const MessageRoleSchema = z.enum(["system", "user", "assistant", "tool"]);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
@@ -247,12 +248,41 @@ export function cacheKey(request: CompleteRequest): string {
   const normalized = {
     model: request.model,
     messages: request.messages,
+    prompt: request.prompt,
+    inputs: request.inputs,
+    fallbacks: request.fallbacks,
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     topP: request.topP,
     stop: request.stop,
+    schema: request.schema ? zodToJsonSchema(request.schema) : undefined,
+    schemaMaxRetries: request.schemaMaxRetries,
+    tools: request.tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    })),
+    toolChoice: request.toolChoice,
+    maxToolCalls: request.maxToolCalls,
+    rag: request.rag,
   };
-  return JSON.stringify(normalized);
+  return stableStringify(normalized);
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortValue(value));
+}
+
+function sortValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortValue);
+  if (value === null || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortValue(entry)])
+  );
 }
 
 export interface Plugin {
@@ -263,6 +293,7 @@ export interface Plugin {
     request: CompleteRequest
   ) => CompleteResponse | Promise<CompleteResponse>;
   onStreamRequest?: (request: StreamRequest) => StreamRequest | Promise<StreamRequest>;
+  onStreamEnd?: (request: StreamRequest) => void | Promise<void>;
   onError?: (error: Error, context: { request: CompleteRequest | StreamRequest }) => void;
 }
 

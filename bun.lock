@@ -14,9 +14,9 @@
         "typescript": "^6.0.3",
       },
     },
-    "packages/client": {
-      "name": "@weysabi/client",
-      "version": "0.7.0",
+    "packages/sabi": {
+      "name": "@weysabi/sabi",
+      "version": "0.8.0",
       "bin": {
         "sabi": "./src/cli/index.ts",
       },
@@ -43,27 +43,20 @@
     },
     "packages/server": {
       "name": "@weysabi/server",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@joinremba/beacon": "^0.5.2",
         "@joinremba/catalog": "^0.5.0",
         "@joinremba/gate": "^0.5.3",
+        "@weysabi/sabi": "^0.8.0",
+        "hono": "^4.12.26",
         "zod": "^4.4.2",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "@weysabi/client": "workspace:*",
-        "hono": "^4.12.26",
         "prettier": "^3.8.3",
         "typescript": "^6.0.3",
       },
-      "peerDependencies": {
-        "@weysabi/client": "^0.7.0",
-        "hono": "^4.12.26",
-      },
-      "optionalPeers": [
-        "hono",
-      ],
     },
   },
   "packages": {
@@ -125,7 +118,7 @@
 
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.1", "", {}, "sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ=="],
 
-    "@weysabi/client": ["@weysabi/client@workspace:packages/client"],
+    "@weysabi/sabi": ["@weysabi/sabi@workspace:packages/sabi"],
 
     "@weysabi/server": ["@weysabi/server@workspace:packages/server"],
 

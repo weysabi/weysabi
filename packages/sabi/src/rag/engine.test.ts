@@ -121,11 +121,67 @@ describe("RagEngine", () => {
     cleanup();
   });
 
+  it("strips the provider prefix from the embedding API model", async () => {
+    let sentModel = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      sentModel = body.model;
+      const inputs: string[] = Array.isArray(body.input) ? body.input : [body.input];
+      return new Response(
+        JSON.stringify({
+          data: inputs.map((text, index) => ({
+            embedding: deterministicEmbedding(text),
+            index,
+          })),
+          usage: { prompt_tokens: 1, total_tokens: 1 },
+          model: body.model,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }) as typeof globalThis.fetch;
+
+    const { engine, cleanup } = makeEngine();
+    await engine.load({ name: "model.md", content: "Embedding model test." });
+    expect(sentModel).toBe("text-embedding");
+    cleanup();
+  });
+
   it("deduplicates by content hash", async () => {
     const { engine, cleanup } = makeEngine();
     await engine.load({ name: "dup.md", content: "Duplicate content" });
     const results = await engine.load({ name: "dup.md", content: "Duplicate content" });
     expect(results[0]!.skipped).toBe(true);
+    cleanup();
+  });
+
+  it("does not mark a file as loaded when embedding fails", async () => {
+    const { engine, cleanup } = makeEngine();
+    let calls = 0;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls++;
+      if (calls === 1) return new Response("failed", { status: 500 });
+      const body = JSON.parse(init?.body as string);
+      const inputs: string[] = Array.isArray(body.input) ? body.input : [body.input];
+      return new Response(
+        JSON.stringify({
+          data: inputs.map((text, index) => ({
+            embedding: deterministicEmbedding(text),
+            index,
+          })),
+          usage: { prompt_tokens: 1, total_tokens: 1 },
+          model: body.model,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }) as typeof globalThis.fetch;
+
+    const source = { name: "retry.md", content: "Retry this document." };
+    await expect(engine.load(source)).rejects.toThrow("Batch embedding failed");
+    expect(engine.stats().files).toBe(0);
+
+    const result = await engine.load(source);
+    expect(result[0]!.skipped).toBe(false);
+    expect(engine.stats().files).toBe(1);
     cleanup();
   });
 

@@ -7,7 +7,7 @@ export interface ToolDefInfo {
 }
 
 export interface ProviderHandler {
-  buildUrl(baseUrl: string, modelId: string): string;
+  buildUrl(baseUrl: string, modelId: string, stream: boolean): string;
   buildHeaders(apiKey: string): Record<string, string>;
   buildBody(
     modelId: string,

@@ -8,6 +8,11 @@ export interface EmbeddingResult {
 
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
+function embeddingModelId(model: string): string {
+  const slashIndex = model.indexOf("/");
+  return slashIndex === -1 ? model : model.slice(slashIndex + 1);
+}
+
 function embeddingBaseUrl(provider: string): string {
   const urls: Record<string, string> = {
     openai: "https://api.openai.com/v1",
@@ -21,7 +26,7 @@ export async function embedText(
   providerConfig: ProviderConfig & { provider: string },
   model?: string
 ): Promise<EmbeddingResult> {
-  const resolvedModel = model ?? DEFAULT_EMBEDDING_MODEL;
+  const resolvedModel = embeddingModelId(model ?? DEFAULT_EMBEDDING_MODEL);
   const baseUrl = providerConfig.baseUrl ?? embeddingBaseUrl(providerConfig.provider);
 
   const response = await fetch(`${baseUrl}/embeddings`, {
@@ -60,7 +65,7 @@ export async function embedBatch(
   providerConfig: ProviderConfig & { provider: string },
   model?: string
 ): Promise<EmbeddingResult[]> {
-  const resolvedModel = model ?? DEFAULT_EMBEDDING_MODEL;
+  const resolvedModel = embeddingModelId(model ?? DEFAULT_EMBEDDING_MODEL);
   const baseUrl = providerConfig.baseUrl ?? embeddingBaseUrl(providerConfig.provider);
 
   const response = await fetch(`${baseUrl}/embeddings`, {
