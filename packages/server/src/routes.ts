@@ -19,6 +19,8 @@ import { ok, fail, fromServerError } from "./responses";
 import { createModuleLogger } from "./logger";
 import { InMemoryTokenQuotaStore, extractKeyFromAuth } from "./quota";
 import type { TokenQuotaConfig, TokenQuotaStore } from "./quota";
+import { InMemoryUsageLedger } from "./ledger";
+import type { UsageLedger, UsageRecord } from "./ledger";
 
 export interface ServerOptions {
   port?: number;
@@ -31,6 +33,7 @@ export interface ServerOptions {
   modelAliases?: ModelAlias[];
   quotaConfig?: TokenQuotaConfig;
   quotaStore?: TokenQuotaStore;
+  usageLedger?: UsageLedger;
   idempotencyTtl?: number;
   maxBodyBytes?: number;
   trustedProxies?: string[];
@@ -76,6 +79,7 @@ export async function createRouter(
   const modelAliases: ModelAliasMap = buildModelAliases(options.modelAliases);
   const quotaStore: TokenQuotaStore = options.quotaStore ?? new InMemoryTokenQuotaStore();
   const quotaConfig = options.quotaConfig;
+  const usageLedger: UsageLedger = options.usageLedger ?? new InMemoryUsageLedger();
 
   const corsOrigins = options.corsOrigins ?? ["*"];
   try {
@@ -225,8 +229,17 @@ export async function createRouter(
               let next = await iterator.next();
               while (!next.done) {
                 const chunk = next.value;
-                if (chunk.done && chunk.usage?.totalTokens && authKey && quotaStore) {
-                  await quotaStore.record(authKey, chunk.usage.totalTokens);
+                if (chunk.done && chunk.usage?.totalTokens && authKey) {
+                  if (quotaStore) await quotaStore.record(authKey, chunk.usage.totalTokens);
+                  await usageLedger.record({
+                    keyFingerprint: authKey,
+                    model,
+                    promptTokens: chunk.usage.promptTokens,
+                    completionTokens: chunk.usage.completionTokens,
+                    totalTokens: chunk.usage.totalTokens,
+                    timestamp: Date.now(),
+                    status: "success",
+                  });
                 }
                 const line = translateStreamChunk(chunk, model);
                 controller.enqueue(new TextEncoder().encode(line));
@@ -259,8 +272,17 @@ export async function createRouter(
     const response = await sabi.complete(request);
     const translated = translateResponse(response, request.model as string);
 
-    if (authKey && quotaStore && response.usage?.totalTokens) {
-      await quotaStore.record(authKey, response.usage.totalTokens);
+    if (authKey && response.usage?.totalTokens) {
+      if (quotaStore) await quotaStore.record(authKey, response.usage.totalTokens);
+      await usageLedger.record({
+        keyFingerprint: authKey,
+        model: request.model as string,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+        timestamp: Date.now(),
+        status: "success",
+      });
     }
 
     if (idempKey && requestFingerprint) {

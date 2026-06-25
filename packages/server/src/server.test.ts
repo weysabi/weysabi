@@ -6,6 +6,7 @@ import type { StreamRequest, Weysabi } from "@weysabi/sabi";
 import { resolveApiKeys, parseApiKeys, resolveClientIp } from "./middleware";
 import { buildModelAliases, resolveAlias, getAliasesList } from "./aliases";
 import { InMemoryTokenQuotaStore, extractKeyFromAuth } from "./quota";
+import { InMemoryUsageLedger } from "./ledger";
 
 describe("translateRequest", () => {
   it("converts OpenAI-style request to Weysabi CompleteRequest", () => {
@@ -1110,6 +1111,72 @@ describe("Token quotas", () => {
       );
 
       expect(res.status).toBe(200);
+    });
+  });
+});
+
+describe("Usage ledger", () => {
+  describe("InMemoryUsageLedger", () => {
+    it("records and queries by key", async () => {
+      const ledger = new InMemoryUsageLedger();
+      await ledger.record({
+        keyFingerprint: "key-1",
+        model: "groq/llama-4-scout",
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+        timestamp: Date.now(),
+        status: "success",
+      });
+
+      const result = await ledger.query({ keyFingerprint: "key-1" });
+      expect(result.records).toHaveLength(1);
+      expect(result.records[0]!.totalTokens).toBe(30);
+    });
+
+    it("returns stats per key", async () => {
+      const ledger = new InMemoryUsageLedger();
+      await ledger.record({
+        keyFingerprint: "key-a",
+        model: "gpt-4",
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+        estimatedCostUsd: 0.001,
+        timestamp: Date.now(),
+        status: "success",
+      });
+
+      const stats = await ledger.stats("key-a");
+      expect(stats.totalRequests).toBe(1);
+      expect(stats.totalTokens).toBe(30);
+      expect(stats.totalCostUsd).toBeCloseTo(0.001);
+    });
+
+    it("aggregates across keys", async () => {
+      const ledger = new InMemoryUsageLedger();
+      await ledger.record({
+        keyFingerprint: "key-a",
+        model: "gpt-4",
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+        timestamp: Date.now(),
+        status: "success",
+      });
+      await ledger.record({
+        keyFingerprint: "key-b",
+        model: "claude",
+        promptTokens: 5,
+        completionTokens: 5,
+        totalTokens: 10,
+        timestamp: Date.now(),
+        status: "success",
+      });
+
+      const all = await ledger.query();
+      expect(all.records).toHaveLength(2);
+      expect(all.total).toBe(2);
     });
   });
 });

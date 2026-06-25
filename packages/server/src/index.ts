@@ -52,6 +52,7 @@ export async function createServer(
     modelAliases: options.modelAliases,
     quotaConfig: options.quotaConfig,
     quotaStore: options.quotaStore,
+    usageLedger: options.usageLedger,
     idempotencyTtl,
     maxBodyBytes,
     trustedProxies,
