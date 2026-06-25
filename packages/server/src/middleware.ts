@@ -1,8 +1,52 @@
 import { createApiKeyValidator } from "@joinremba/gate/api-keys";
+import type { ApiKeyEntry } from "@joinremba/gate/api-keys";
 import { rateLimit, InMemoryRateLimitStore } from "@joinremba/gate/rate-limit";
+import { idempotency, InMemoryStore } from "@joinremba/gate/idempotency";
+import type { IdempotencyInstance } from "@joinremba/gate/idempotency";
+import { AuthError, InsufficientPermissionsError, RateLimitError } from "./errors";
 
-export function createAuth(apiKey: string) {
-  const validator = createApiKeyValidator([{ key: apiKey }]);
+export type { ApiKeyEntry };
+export type { IdempotencyInstance };
+
+export function parseApiKeys(raw: string): ApiKeyEntry[] {
+  return raw.split(";").map((entry) => {
+    const colonIdx = entry.indexOf(":");
+    if (colonIdx === -1) {
+      return { key: entry.trim() };
+    }
+    const key = entry.slice(0, colonIdx).trim();
+    const scopes = entry
+      .slice(colonIdx + 1)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return { key, scopes: scopes.length > 0 ? scopes : undefined };
+  });
+}
+
+export function resolveApiKeys(apiKey?: string, apiKeys?: ApiKeyEntry[]): ApiKeyEntry[] {
+  const keys: ApiKeyEntry[] = [];
+  if (apiKey) {
+    keys.push({ key: apiKey, scopes: ["admin"] });
+  }
+  if (apiKeys) {
+    keys.push(...apiKeys);
+  }
+  const envKeys = process.env.SABI_API_KEYS;
+  if (apiKey === undefined && apiKeys === undefined && envKeys) {
+    keys.push(...parseApiKeys(envKeys));
+  }
+  return keys;
+}
+
+function getScopeForPath(method: string, path: string): string[] | null {
+  if (path === "/v1/chat/completions" && method === "POST") return ["chat:write"];
+  if (path.startsWith("/v1/models")) return ["models:read"];
+  return null;
+}
+
+export function createAuth(keys: ApiKeyEntry[]) {
+  const validator = createApiKeyValidator(keys);
   const authenticate = validator.authenticate();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,18 +58,18 @@ export function createAuth(apiKey: string) {
 
     const result = await authenticate(c.req.raw);
     if (!result.authenticated) {
-      return c.json(
-        {
-          error: {
-            message:
-              "Incorrect API key provided. Set SABI_API_KEY or pass via Authorization header.",
-            type: "invalid_request_error",
-            code: "invalid_api_key",
-          },
-        },
-        401,
-        { "WWW-Authenticate": "Bearer" }
+      throw new AuthError();
+    }
+
+    const required = getScopeForPath(c.req.method, c.req.path);
+    if (required) {
+      const userScopes = result.scopes ?? [];
+      const missing = required.filter(
+        (s: string) => !userScopes.includes(s) && !userScopes.includes("admin")
       );
+      if (missing.length > 0) {
+        throw new InsufficientPermissionsError(missing[0]!);
+      }
     }
 
     await next();
@@ -33,9 +77,10 @@ export function createAuth(apiKey: string) {
 }
 
 export function createRateLimiter(rpm: number) {
+  const store = new InMemoryRateLimitStore();
   const limiter = rateLimit({
     max: rpm,
-    store: new InMemoryRateLimitStore(),
+    store,
     keyFn: (req: Request) => {
       const ip =
         req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -50,22 +95,16 @@ export function createRateLimiter(rpm: number) {
     const result = await limiter.check(c.req.raw);
     if (!result.allowed) {
       const retryAfter = Math.ceil((result.reset - Date.now()) / 1000);
-      return c.json(
-        {
-          error: {
-            message: `Rate limit exceeded. Try again in ${retryAfter}s.`,
-            type: "rate_limit_error",
-            code: "rate_limit_exceeded",
-          },
-        },
-        429,
-        {
-          "Retry-After": String(retryAfter),
-          "X-RateLimit-Remaining": "0",
-        }
-      );
+      throw new RateLimitError(retryAfter);
     }
 
     await next();
   };
+}
+
+export function createIdempotency(ttlSeconds: number): IdempotencyInstance {
+  return idempotency({
+    store: new InMemoryStore(),
+    ttl: ttlSeconds * 1000,
+  });
 }

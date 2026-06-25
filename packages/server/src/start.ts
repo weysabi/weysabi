@@ -1,5 +1,7 @@
-import { createWeysabi } from "@weysabi/client";
+import { createWeysabi } from "@weysabi/sabi";
 import { createServer } from "./index";
+import { createServerConfig, validateOrExit } from "./config";
+import { resolveApiKeys, parseApiKeys } from "./middleware";
 import { log } from "./logger";
 
 const PROVIDER_ENV_VARS: Record<string, string> = {
@@ -14,6 +16,11 @@ const PROVIDER_ENV_VARS: Record<string, string> = {
   openrouter: "SABI_OPENROUTER_API_KEY",
   ollama: "SABI_OLLAMA_API_KEY",
 };
+
+const config = validateOrExit();
+if (!config) {
+  process.exit(1);
+}
 
 const providers: Record<string, { apiKey: string }> = {};
 
@@ -31,25 +38,30 @@ if (Object.keys(providers).length === 0) {
 
 const sabi = createWeysabi(providers);
 
-const port = Number(process.env.SABI_PORT) || 3000;
-const apiKey = process.env.SABI_API_KEY;
-const corsOrigins = process.env.SABI_CORS_ORIGINS
-  ? process.env.SABI_CORS_ORIGINS.split(",").map((s) => s.trim())
-  : undefined;
-const rateLimitRpm = Number(process.env.SABI_RATE_LIMIT_RPM) || 300;
+const port = config.get<number>("SABI_PORT");
+const apiKey = config.get<string>("SABI_API_KEY") || undefined;
+const apiKeys = process.env.SABI_API_KEYS ? parseApiKeys(process.env.SABI_API_KEYS) : undefined;
+const corsOrigins = config
+  .get<string>("SABI_CORS_ORIGINS")
+  .split(",")
+  .map((s: string) => s.trim());
+const rateLimitRpm = config.get<number>("SABI_RATE_LIMIT_RPM");
+const idempotencyTtl = config.get<number>("SABI_IDEMPOTENCY_TTL");
 
 const server = await createServer(sabi, {
   port,
   apiKey,
+  apiKeys,
   corsOrigins,
   rateLimitRpm,
   providers: Object.keys(providers),
+  idempotencyTtl,
 });
 
 log.info("Weysabi Server ready", {
   port: server.port,
   providers: Object.keys(providers),
-  auth: !!apiKey,
+  auth: !!apiKey || !!apiKeys,
   rateLimitRpm,
 });
 

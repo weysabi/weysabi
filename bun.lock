@@ -45,6 +45,7 @@
       "name": "@weysabi/server",
       "version": "0.7.0",
       "dependencies": {
+        "@joinremba/beacon": "^0.5.2",
         "@joinremba/catalog": "^0.5.0",
         "@joinremba/gate": "^0.5.3",
         "zod": "^4.4.2",
@@ -85,6 +86,8 @@
     "@humanwhocodes/module-importer": ["@humanwhocodes/module-importer@1.0.1", "", {}, "sha512-bxveV4V8v5Yb4ncFTT3rPSgZBOpCkjfK0y4oVVVJwIuDVBRMDXrPyXRL988i5ap9m9bnyEEjWfm5WkBmtffLfA=="],
 
     "@humanwhocodes/object-schema": ["@humanwhocodes/object-schema@2.0.3", "", {}, "sha512-93zYdMES/c1D69yZiKDBj0V24vqNzB/koF26KPaagAfd3P/4gUlh3Dys5ogAK+Exi9QyzlD8x/08Zt7wIKcDcA=="],
+
+    "@joinremba/beacon": ["@joinremba/beacon@0.5.2", "", { "dependencies": { "zod": "^4.4.2" }, "bin": { "beacon": "src/cli.ts" } }, "sha512-leBSDvj6c4bnzoeNolgLrzsHxJNMrn8W6xUENP6/dFq0aZvBX5veCixjhvoTRlYvUgYmBeWc+82pew8x9/8JRA=="],
 
     "@joinremba/catalog": ["@joinremba/catalog@0.5.0", "", { "dependencies": { "@joinremba/core": "^0.4.0", "pino": "^10.3.1", "pino-roll": "^4.0.0" } }, "sha512-7HXJz7DBo1Ft7NTVfJsCJ5yLaiDSAQD+7+CXaNKYrIVNsrShHoFfN4zQ+JExiElKD16Et/WPoGRjEZM4KyJeoQ=="],
 

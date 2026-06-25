@@ -20,8 +20,8 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@weysabi/client": ["packages/client/src"],
-      "@weysabi/client/*": ["packages/client/src/*"],
+      "@weysabi/sabi": ["packages/sabi/src"],
+      "@weysabi/sabi/*": ["packages/sabi/src/*"],
       "@weysabi/server": ["packages/server/src"],
       "@weysabi/server/*": ["packages/server/src/*"]
     }

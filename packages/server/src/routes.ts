@@ -1,14 +1,20 @@
-import type { Weysabi } from "@weysabi/client";
+import type { Weysabi } from "@weysabi/sabi";
+import { AllModelsFailedError } from "@weysabi/sabi/errors";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
-import { createAuth, createRateLimiter } from "./middleware";
+import { createAuth, createRateLimiter, createIdempotency, resolveApiKeys } from "./middleware";
+import type { ApiKeyEntry, IdempotencyInstance } from "./middleware";
+import { ServerError, NotFoundError } from "./errors";
+import { ok, fail, fromServerError } from "./responses";
 import { createModuleLogger } from "./logger";
 
 export interface ServerOptions {
   port?: number;
   apiKey?: string;
+  apiKeys?: ApiKeyEntry[];
   corsOrigins?: string[];
   rateLimitRpm?: number;
   providers?: string[];
+  idempotencyTtl?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,7 +47,7 @@ export async function createRouter(
       cors({
         origin: corsOrigins.includes("*") ? "*" : corsOrigins,
         allowMethods: ["GET", "POST", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
         exposeHeaders: ["Content-Length"],
         maxAge: 86400,
       })
@@ -50,12 +56,15 @@ export async function createRouter(
     // cors() is a no-op if Hono is too old
   }
 
-  if (options.apiKey) {
-    app.use("/*", createAuth(options.apiKey));
+  const apiKeys = resolveApiKeys(options.apiKey, options.apiKeys);
+  if (apiKeys.length > 0) {
+    app.use("/*", createAuth(apiKeys));
   }
 
   const rpm = options.rateLimitRpm ?? 300;
   app.use("/*", createRateLimiter(rpm));
+
+  const idemp = createIdempotency(options.idempotencyTtl ?? 86400);
 
   app.use("/*", async (c: HonoApp, next: HonoApp) => {
     const start = Date.now();
@@ -87,19 +96,26 @@ export async function createRouter(
             },
           ];
 
-    return c.json({
-      object: "list",
-      data,
-    });
+    return ok(c, { object: "list", data });
   });
 
   app.get("/health", (c: HonoApp) => {
-    return c.json({ status: "ok", timestamp: Date.now() });
+    return ok(c, { status: "ok", timestamp: Date.now() });
   });
 
   app.post("/v1/chat/completions", async (c: HonoApp) => {
     const body = (await c.req.json()) as Record<string, unknown>;
     const stream = body.stream === true;
+    const idempKey = c.req.header("Idempotency-Key");
+
+    if (idempKey && !stream) {
+      const cached = await idemp.getResponse(idempKey);
+      if (cached) {
+        log.info("idempotency hit", { key: idempKey });
+        return ok(c, cached);
+      }
+    }
+
     const request = translateRequest(body);
 
     const start = Date.now();
@@ -139,32 +155,49 @@ export async function createRouter(
       );
     }
 
-    try {
-      const response = await sabi.complete(request);
-      const translated = translateResponse(response, request.model as string);
-      log.info("chat completion success", {
-        model: request.model,
-        latencyMs: Date.now() - start,
-        tokens: response.usage?.totalTokens,
-      });
-      return c.json(translated);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error("chat completion error", {
-        model: request.model,
-        error: message,
-        latencyMs: Date.now() - start,
-      });
-      return c.json(
-        {
-          error: {
-            message,
-            type: "sabi_error",
-          },
-        },
-        500
-      );
+    const response = await sabi.complete(request);
+    const translated = translateResponse(response, request.model as string);
+
+    if (idempKey) {
+      await idemp.setResponse(idempKey, translated);
     }
+
+    log.info("chat completion success", {
+      model: request.model,
+      latencyMs: Date.now() - start,
+      tokens: response.usage?.totalTokens,
+    });
+    return ok(c, translated);
+  });
+
+  app.onError((err: Error, c: HonoApp) => {
+    if (err instanceof ServerError) {
+      log.warn("server error", {
+        code: err.code,
+        status: err.statusCode,
+        path: c.req.path,
+        method: c.req.method,
+      });
+      return fromServerError(c, err);
+    }
+
+    if (err instanceof AllModelsFailedError) {
+      log.error("all models failed", { errors: err.errors });
+      return fail(c, 502, err.message, "ALL_MODELS_FAILED");
+    }
+
+    log.error("unhandled error", {
+      message: err.message,
+      path: c.req.path,
+      method: c.req.method,
+    });
+    return fail(c, 500, "Internal server error", "SERVER_ERROR");
+  });
+
+  app.notFound((c: HonoApp) => {
+    const path = `${c.req.method} ${c.req.path}`;
+    log.warn("not found", { path });
+    return fail(c, 404, `Route ${path} not found`, "NOT_FOUND");
   });
 
   return { fetch: app.fetch as (req: Request) => Response | Promise<Response> };

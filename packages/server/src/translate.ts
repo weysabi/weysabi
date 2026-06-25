@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { CompleteRequest, CompleteResponse, Message } from "@weysabi/client";
-import type { StreamChunk } from "@weysabi/client";
+import type { CompleteRequest, CompleteResponse, Message } from "@weysabi/sabi";
+import type { StreamChunk } from "@weysabi/sabi";
 
 const OpenAiMessageSchema = z.object({
   role: z.string(),
