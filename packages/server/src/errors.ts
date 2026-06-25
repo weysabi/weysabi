@@ -53,6 +53,17 @@ export class PayloadTooLargeError extends ServerError {
   }
 }
 
+export class IdempotencyConflictError extends ServerError {
+  constructor() {
+    super(
+      409,
+      "IDEMPOTENCY_KEY_REUSED",
+      "Idempotency-Key was already used with a different request"
+    );
+    this.name = "IdempotencyConflictError";
+  }
+}
+
 export class NotFoundError extends ServerError {
   constructor(path: string) {
     super(404, "NOT_FOUND", `Route ${path} not found`);

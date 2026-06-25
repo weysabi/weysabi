@@ -277,33 +277,38 @@ import { pipe } from "@weysabi/sabi/express";
 import { InMemoryCache, RedisCache } from "@weysabi/sabi/cache";
 import { createOtelPlugin } from "@weysabi/sabi/otel";
 import { createWeysabiProvider } from "@weysabi/sabi/ai-sdk";
-import { RagEngine, RagManager, HnswVectorIndex, FsObjectStore } from "@weysabi/sabi/rag";
+import { RagEngine, RagManager } from "@weysabi/sabi/rag";
 import { ConversationMemory } from "@weysabi/sabi/chat";
+import { createServer } from "@weysabi/server";
 ```
 
 ## Server
 
-Deploy Weysabi as an OpenAI-compatible HTTP server. Frontend devs point their OpenAI SDK at it and get provider failover, RAG, memory, and caching — no backend code.
+Deploy Weysabi as an OpenAI-compatible HTTP server. Frontend devs point their OpenAI SDK at it and get provider failover, caching, rate limiting, and auth — no backend code.
 
 ```bash
 # Quick start — uses SABI_*_API_KEY env vars
+bunx @weysabi/server --port 3000
+
+# Or via the sabi CLI
 bun sabi server --port 3000
 ```
 
 ```ts
-// Or embed in your existing Hono app
+// Embed in your app
 import { createServer } from "@weysabi/server";
 
-const server = createServer(sabi, {
-  memory: { dbPath: ".sabi/chat.db" },
-  rag: { dbPath: ".sabi/rag.db" },
+const server = await createServer(sabi, {
+  apiKey: "sk-my-key",
+  providers: ["groq", "openai"],
 });
-app.route("/v1", server);
 ```
 
 **Endpoints:** `POST /v1/chat/completions` (OpenAI-compatible, streaming), `GET /v1/models`, `GET /health`, `POST /v1/rag/query`, `POST /v1/chat/session`.
 
 Works with any OpenAI SDK client — `useChat()`, `new OpenAI()`, `curl`.
+
+**Configuration:** Set `SABI_*_API_KEY` env vars for providers. Optional: `SABI_API_KEY` for auth, `SABI_API_KEYS` for scoped keys (`key:chat:write;key2:admin`), `SABI_PORT` (default `3000`), `SABI_RATE_LIMIT_RPM` (default `300`).
 
 ## RAG (Retrieval-Augmented Generation)
 

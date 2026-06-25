@@ -57,11 +57,31 @@ export function ensureGitignore(projectDir: string): void {
       .map((line) => line.trim())
       .filter(Boolean)
   );
-  const additions = [".sabi/", "sabi.json"].filter((entry) => !entries.has(entry));
+  const additions = [".env", ".sabi/", "sabi.json"].filter((entry) => !entries.has(entry));
   if (additions.length === 0) return;
 
   const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
   writeFileSync(gitignorePath, `${current}${prefix}${additions.join("\n")}\n`, "utf-8");
+}
+
+export function upsertEnvFile(projectDir: string, values: Record<string, string>): string {
+  const envPath = resolve(projectDir, ".env");
+  const current = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
+  const lines = current.split(/\r?\n/u);
+  const pending = new Map(Object.entries(values));
+  const updated = lines.map((line) => {
+    const match = line.match(/^([A-Z][A-Z0-9_]*)=/u);
+    if (!match || !pending.has(match[1]!)) return line;
+    const key = match[1]!;
+    const value = pending.get(key)!;
+    pending.delete(key);
+    return `${key}=${value}`;
+  });
+
+  while (updated.length > 0 && updated.at(-1) === "") updated.pop();
+  for (const [key, value] of pending) updated.push(`${key}=${value}`);
+  writeFileSync(envPath, `${updated.join("\n")}\n`, "utf-8");
+  return envPath;
 }
 
 export async function initCommand(): Promise<void> {
@@ -81,11 +101,12 @@ export async function initCommand(): Promise<void> {
   if (p.isCancel(selectedProviders)) process.exit(0);
 
   const providers: Record<string, { apiKey: string }> = {};
+  const newEnvValues: Record<string, string> = {};
   for (const name of selectedProviders as string[]) {
     const envVar = `${name.toUpperCase()}_API_KEY`;
     const envValue = process.env[envVar];
     if (envValue) {
-      providers[name] = { apiKey: envValue };
+      providers[name] = { apiKey: "" };
       continue;
     }
     const key = await p.password({
@@ -93,7 +114,8 @@ export async function initCommand(): Promise<void> {
       validate: (v) => (v ? undefined : "Key is required"),
     });
     if (p.isCancel(key)) process.exit(0);
-    providers[name] = { apiKey: key as string };
+    providers[name] = { apiKey: "" };
+    newEnvValues[envVar] = key as string;
   }
 
   const defaultModelSuggestions = (selectedProviders as string[]).map(
@@ -138,8 +160,13 @@ export async function initCommand(): Promise<void> {
   const path = saveConfig(config, resolve(projectDir, "sabi.json"));
   p.note(`Config saved to ${path}`, "Done");
 
+  if (Object.keys(newEnvValues).length > 0) {
+    upsertEnvFile(projectDir, newEnvValues);
+    p.log.step("Saved provider credentials to .env");
+  }
+
   ensureGitignore(projectDir);
-  p.log.step("Added local Sabi data and config to .gitignore");
+  p.log.step("Added credentials, local Sabi data, and config to .gitignore");
 
   p.outro("sabi is ready. Run `sabi config validate` to verify your keys.");
 }

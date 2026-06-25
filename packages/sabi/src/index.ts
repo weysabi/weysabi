@@ -204,6 +204,10 @@ class WeysabiImpl implements Weysabi {
     this.use(plugin);
   }
 
+  close(): void {
+    this.rag.close();
+  }
+
   async complete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
     let currentRequest: CompleteRequest = this.materializePrompt(
       this.normalizeModels(request) as CompleteRequest

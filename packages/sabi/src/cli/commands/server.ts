@@ -5,7 +5,7 @@ export async function serverCommand(options: { port?: string; host?: string }): 
   const providers = resolveProviders();
   if (Object.keys(providers).length === 0) {
     console.error(
-      "No providers configured. Set SABI_OPENAI_API_KEY (or similar) or create sabi.json."
+      "No providers configured. Set OPENAI_API_KEY (or similar) or create sabi.json."
     );
     process.exit(1);
   }
@@ -15,8 +15,8 @@ export async function serverCommand(options: { port?: string; host?: string }): 
 
   let createServer: (
     sabi: Weysabi,
-    options: { port?: number; providers?: string[] }
-  ) => Promise<{ port: number }>;
+    options: { port?: number; hostname?: string; providers?: string[] }
+  ) => Promise<{ port: number; hostname: string }>;
   try {
     createServer = (await import("@weysabi/server")).createServer;
   } catch {
@@ -27,20 +27,23 @@ export async function serverCommand(options: { port?: string; host?: string }): 
   }
 
   const port = Number(options.port) || Number(process.env.SABI_PORT) || 3000;
+  const hostname = options.host || process.env.SABI_HOST || "0.0.0.0";
+  const displayHost = hostname === "0.0.0.0" || hostname === "::" ? "localhost" : hostname;
 
-  console.log(`Weysabi Server starting on http://localhost:${port}`);
+  console.log(`Weysabi Server starting on http://${displayHost}:${port}`);
   console.log(`Providers: ${Object.keys(providers).join(", ")}`);
 
   try {
-    const server = (await createServer(sabi, {
+    const server = await createServer(sabi, {
       port,
+      hostname,
       providers: Object.keys(providers),
-    })) as { port: number };
-    console.log(`Weysabi Server ready — http://localhost:${server.port}`);
+    });
+    console.log(`Weysabi Server ready — http://${displayHost}:${server.port}`);
     console.log("Endpoints:");
-    console.log(`  POST /v1/chat/completions — OpenAI-compatible chat`);
-    console.log(`  GET  /v1/models           — List models`);
-    console.log(`  GET  /health              — Health check`);
+    console.log("  POST /v1/chat/completions — OpenAI-compatible chat");
+    console.log("  GET  /v1/models           — List models");
+    console.log("  GET  /health              — Health check");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Failed to start server: ${message}`);

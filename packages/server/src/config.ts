@@ -7,6 +7,7 @@ const log = createModuleLogger("config");
 export function createServerConfig(): Beacon {
   return createBeacon({
     SABI_PORT: { type: "port", default: 3000, description: "HTTP listen port" },
+    SABI_HOST: { type: "string", default: "0.0.0.0", description: "HTTP listen host" },
     SABI_API_KEY: {
       type: "string",
       required: false,

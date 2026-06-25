@@ -1,15 +1,18 @@
 import type { Weysabi } from "@weysabi/sabi";
 import { AllModelsFailedError } from "@weysabi/sabi/errors";
+import { InMemoryRateLimitStore } from "@joinremba/gate/rate-limit";
+import { InMemoryStore } from "@joinremba/gate/idempotency";
 import { z } from "zod";
 import { translateRequest, translateResponse, translateStreamChunk } from "./translate";
 import { createAuth, createRateLimiter, createIdempotency, resolveApiKeys } from "./middleware";
-import type { ApiKeyEntry } from "./middleware";
-import { PayloadTooLargeError, ServerError } from "./errors";
+import type { ApiKeyEntry, IdempotencyStore, RateLimitStore } from "./middleware";
+import { IdempotencyConflictError, PayloadTooLargeError, ServerError } from "./errors";
 import { ok, fail, fromServerError } from "./responses";
 import { createModuleLogger } from "./logger";
 
 export interface ServerOptions {
   port?: number;
+  hostname?: string;
   apiKey?: string;
   apiKeys?: ApiKeyEntry[];
   corsOrigins?: string[];
@@ -19,6 +22,9 @@ export interface ServerOptions {
   maxBodyBytes?: number;
   trustedProxies?: string[];
   getRemoteAddress?: (request: Request) => string | undefined;
+  rateLimitStore?: RateLimitStore;
+  idempotencyStore?: IdempotencyStore;
+  closeSabiOnStop?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,12 +34,20 @@ function sseErrorEvent(message: string): string {
   return `data: ${JSON.stringify({ error: { message, type: "sabi_error" } })}\n\n`;
 }
 
+async function sha256(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 const log = createModuleLogger("routes");
 
 export async function createRouter(
   sabi: Weysabi,
   options: ServerOptions = {}
-): Promise<{ fetch: (req: Request) => Response | Promise<Response> }> {
+): Promise<{
+  fetch: (req: Request) => Response | Promise<Response>;
+  close: () => void;
+}> {
   let Hono: new () => HonoApp;
   try {
     const mod = await import("hono");
@@ -43,6 +57,8 @@ export async function createRouter(
   }
   const app = new Hono();
   const maxBodyBytes = options.maxBodyBytes ?? 1024 * 1024;
+  const rateLimitStore = options.rateLimitStore ?? new InMemoryRateLimitStore();
+  const idempotencyStore = options.idempotencyStore ?? new InMemoryStore();
 
   const corsOrigins = options.corsOrigins ?? ["*"];
   try {
@@ -69,10 +85,14 @@ export async function createRouter(
   const rpm = options.rateLimitRpm ?? 300;
   app.use(
     "/*",
-    createRateLimiter(rpm, {
-      trustedProxies: options.trustedProxies,
-      getRemoteAddress: options.getRemoteAddress,
-    })
+    createRateLimiter(
+      rpm,
+      {
+        trustedProxies: options.trustedProxies,
+        getRemoteAddress: options.getRemoteAddress,
+      },
+      rateLimitStore
+    )
   );
 
   const { bodyLimit } = await import("hono/body-limit");
@@ -86,7 +106,7 @@ export async function createRouter(
     })
   );
 
-  const idemp = createIdempotency(options.idempotencyTtl ?? 86400);
+  const idemp = createIdempotency(options.idempotencyTtl ?? 86400, idempotencyStore);
 
   app.use("/*", async (c: HonoApp, next: HonoApp) => {
     const start = Date.now();
@@ -128,13 +148,25 @@ export async function createRouter(
   app.post("/v1/chat/completions", async (c: HonoApp) => {
     const body = (await c.req.json()) as Record<string, unknown>;
     const stream = body.stream === true;
-    const idempKey = c.req.header("Idempotency-Key");
+    const rawIdempKey = c.req.header("Idempotency-Key");
+    const [idempKey, requestFingerprint] =
+      rawIdempKey && !stream
+        ? await Promise.all([
+            sha256(`${c.req.header("Authorization") ?? "anonymous"}:${rawIdempKey}`),
+            sha256(JSON.stringify(body)),
+          ])
+        : [undefined, undefined];
 
-    if (idempKey && !stream) {
-      const cached = await idemp.getResponse(idempKey);
+    if (idempKey) {
+      const cached = (await idemp.getResponse(idempKey)) as
+        | { fingerprint: string; response: unknown }
+        | undefined;
       if (cached) {
+        if (cached.fingerprint !== requestFingerprint) {
+          throw new IdempotencyConflictError();
+        }
         log.info("idempotency hit", { key: idempKey });
-        return ok(c, cached);
+        return ok(c, cached.response);
       }
     }
 
@@ -188,8 +220,11 @@ export async function createRouter(
     const response = await sabi.complete(request);
     const translated = translateResponse(response, request.model as string);
 
-    if (idempKey) {
-      await idemp.setResponse(idempKey, translated);
+    if (idempKey && requestFingerprint) {
+      await idemp.setResponse(idempKey, {
+        fingerprint: requestFingerprint,
+        response: translated,
+      });
     }
 
     log.info("chat completion success", {
@@ -238,5 +273,15 @@ export async function createRouter(
     return fail(c, 404, `Route ${path} not found`, "NOT_FOUND");
   });
 
-  return { fetch: app.fetch as (req: Request) => Response | Promise<Response> };
+  return {
+    fetch: app.fetch as (req: Request) => Response | Promise<Response>,
+    close: () => {
+      if (!options.rateLimitStore && "dispose" in rateLimitStore) {
+        (rateLimitStore as RateLimitStore & { dispose: () => void }).dispose();
+      }
+      if (!options.idempotencyStore && "dispose" in idempotencyStore) {
+        (idempotencyStore as IdempotencyStore & { dispose: () => void }).dispose();
+      }
+    },
+  };
 }

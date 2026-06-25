@@ -1,12 +1,13 @@
 import { createApiKeyValidator } from "@joinremba/gate/api-keys";
 import type { ApiKeyEntry } from "@joinremba/gate/api-keys";
 import { rateLimit, InMemoryRateLimitStore } from "@joinremba/gate/rate-limit";
+import type { RateLimitStore } from "@joinremba/gate/rate-limit";
 import { idempotency, InMemoryStore } from "@joinremba/gate/idempotency";
-import type { IdempotencyInstance } from "@joinremba/gate/idempotency";
+import type { IdempotencyInstance, IdempotencyStore } from "@joinremba/gate/idempotency";
 import { AuthError, InsufficientPermissionsError, RateLimitError } from "./errors";
 
 export type { ApiKeyEntry };
-export type { IdempotencyInstance };
+export type { IdempotencyInstance, IdempotencyStore, RateLimitStore };
 
 export interface RateLimiterOptions {
   trustedProxies?: string[];
@@ -106,8 +107,11 @@ export function resolveClientIp(
   return request.headers.get("x-real-ip")?.trim() || remoteAddress;
 }
 
-export function createRateLimiter(rpm: number, options: RateLimiterOptions = {}) {
-  const store = new InMemoryRateLimitStore();
+export function createRateLimiter(
+  rpm: number,
+  options: RateLimiterOptions = {},
+  store: RateLimitStore = new InMemoryRateLimitStore()
+) {
   const limiter = rateLimit({
     max: rpm,
     store,
@@ -127,9 +131,12 @@ export function createRateLimiter(rpm: number, options: RateLimiterOptions = {})
   };
 }
 
-export function createIdempotency(ttlSeconds: number): IdempotencyInstance {
+export function createIdempotency(
+  ttlSeconds: number,
+  store: IdempotencyStore = new InMemoryStore()
+): IdempotencyInstance {
   return idempotency({
-    store: new InMemoryStore(),
+    store,
     ttl: ttlSeconds * 1000,
   });
 }

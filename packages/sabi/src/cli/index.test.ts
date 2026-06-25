@@ -9,7 +9,7 @@ import {
 } from "./utils";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { resolve } from "path";
-import { ensureGitignore } from "./commands/init";
+import { ensureGitignore, upsertEnvFile } from "./commands/init";
 
 describe("providerLabel", () => {
   it("returns display name for known providers", () => {
@@ -181,6 +181,7 @@ describe("ensureGitignore", () => {
     try {
       ensureGitignore(tmpDir);
       const content = readFileSync(resolve(tmpDir, ".gitignore"), "utf-8");
+      expect(content).toContain(".env");
       expect(content).toContain(".sabi/");
       expect(content).toContain("sabi.json");
     } finally {
@@ -199,6 +200,27 @@ describe("ensureGitignore", () => {
       expect(content.match(/\.sabi\//gu)).toHaveLength(1);
       expect(content.match(/sabi\.json/gu)).toHaveLength(1);
       expect(content).toContain("node_modules");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("upsertEnvFile", () => {
+  it("writes new credentials and updates matching keys without replacing other values", () => {
+    const tmpDir = mkdtempSync("sabi-env-");
+    try {
+      const path = resolve(tmpDir, ".env");
+      writeFileSync(path, "EXISTING=value\nGROQ_API_KEY=old\n", "utf-8");
+
+      upsertEnvFile(tmpDir, {
+        GROQ_API_KEY: "new",
+        OPENAI_API_KEY: "openai-secret",
+      });
+
+      expect(readFileSync(path, "utf-8")).toBe(
+        "EXISTING=value\nGROQ_API_KEY=new\nOPENAI_API_KEY=openai-secret\n"
+      );
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

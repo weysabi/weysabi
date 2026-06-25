@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "bin": {
+    "weysabi-server": "./src/cli.ts"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

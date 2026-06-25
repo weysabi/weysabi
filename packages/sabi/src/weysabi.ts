@@ -16,4 +16,5 @@ export interface Weysabi {
   guardrail(name: string, options: GuardrailOptions): void;
   rag: RagEngine;
   prompts: Prompts;
+  close?(): void;
 }

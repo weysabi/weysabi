@@ -776,6 +776,110 @@ describe("Idempotency", () => {
     expect(reqCount).toBe(1); // Only called provider once
   });
 
+  it("rejects reuse of an idempotency key with a different request", async () => {
+    reqCount = 0;
+    globalThis.fetch = (() => {
+      reqCount++;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "response", role: "assistant" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+    }) as unknown as typeof globalThis.fetch;
+
+    const router = await createRouter(createWeysabi({ groq: { apiKey: "test-key" } }));
+    const request = (content: string) =>
+      new Request("http://localhost/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "same-key",
+        },
+        body: JSON.stringify({
+          model: "groq/llama-4-scout",
+          messages: [{ role: "user", content }],
+        }),
+      });
+
+    expect((await router.fetch(request("first"))).status).toBe(200);
+    const conflict = await router.fetch(request("different"));
+    expect(conflict.status).toBe(409);
+    const body = (await conflict.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(reqCount).toBe(1);
+  });
+
+  it("uses injected stores without disposing caller-owned resources", async () => {
+    let rateLimitIncrements = 0;
+    let idempotencyGets = 0;
+    let idempotencySets = 0;
+    let disposeCalls = 0;
+    const values = new Map<string, unknown>();
+    const rateLimitStore = {
+      async increment() {
+        rateLimitIncrements++;
+        return { count: 1, reset: Date.now() + 60_000 };
+      },
+      async reset() {},
+      dispose() {
+        disposeCalls++;
+      },
+    };
+    const idempotencyStore = {
+      async get(key: string) {
+        idempotencyGets++;
+        return values.get(key) ?? null;
+      },
+      async set(key: string, value: unknown) {
+        idempotencySets++;
+        values.set(key, value);
+      },
+      async delete(key: string) {
+        values.delete(key);
+      },
+      dispose() {
+        disposeCalls++;
+      },
+    };
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "ok", role: "assistant" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )) as unknown as typeof globalThis.fetch;
+
+    const router = await createRouter(createWeysabi({ groq: { apiKey: "test-key" } }), {
+      rateLimitStore,
+      idempotencyStore,
+    });
+    const response = await router.fetch(
+      new Request("http://localhost/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "persistent-key",
+        },
+        body: JSON.stringify({
+          model: "groq/llama-4-scout",
+          messages: [{ role: "user", content: "Hi" }],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(rateLimitIncrements).toBe(1);
+    expect(idempotencyGets).toBe(1);
+    expect(idempotencySets).toBe(1);
+    router.close();
+    expect(disposeCalls).toBe(0);
+  });
+
   it("does not cache streaming responses", async () => {
     const encoder = new TextEncoder();
     globalThis.fetch = (() =>
