@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { saveConfig, type WeysabiConfig, providerLabel } from "../utils";
+import { resolveProviders, saveConfig, type WeysabiConfig, providerLabel } from "../utils";
 
 const KNOWN_PROVIDERS = [
   "groq",
@@ -237,11 +237,15 @@ See the [docs](https://weysabi.co/docs/prompts) for more.
       process.env[key] = value;
     }
     const { testProvider, statusIcon, providerLabel } = await import("../utils");
+    const resolvedProviders = resolveProviders(providers);
     const s = p.spinner();
     const names = Object.keys(providers);
     for (const name of names) {
       s.start(`Testing ${providerLabel(name)}...`);
-      const result = await testProvider(name, providers[name]!);
+      const provider = resolvedProviders[name];
+      const result = provider?.apiKey
+        ? await testProvider(name, provider)
+        : { ok: false, latencyMs: 0, error: `No credential resolved for ${name}` };
       s.stop(
         `${statusIcon(result.ok)} ${providerLabel(name)} — ${result.ok ? `${result.latencyMs}ms` : result.error}`
       );

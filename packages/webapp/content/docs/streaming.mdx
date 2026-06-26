@@ -1,0 +1,68 @@
+---
+title: Streaming
+description: Stream provider output directly or expose it through framework adapters.
+---
+
+## Consume an async stream
+
+```ts
+for await (const chunk of sabi.stream({
+  model: "groq/llama-4-scout",
+  messages: [{ role: "user", content: "Write a short release note." }],
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+The final chunk has `done: true` and may include token usage.
+
+## Cancel a stream
+
+```ts
+const controller = new AbortController();
+
+const stream = sabi.stream({
+  model: "groq/llama-4-scout",
+  messages,
+  signal: controller.signal,
+});
+
+controller.abort();
+```
+
+## Return SSE
+
+```ts
+import { toResponse } from "@weysabi/sabi/sse";
+
+export async function POST() {
+  return toResponse(sabi.stream({ model, messages }));
+}
+```
+
+The `hono`, `next`, and `elysia` subpaths re-export `toResponse`.
+
+## Express and Fastify
+
+```ts
+import { pipe } from "@weysabi/sabi/express";
+
+app.post("/chat", async (req, res) => {
+  await pipe(sabi.stream({ model, messages: req.body.messages }), res);
+});
+```
+
+## Browser consumption
+
+```ts
+import { readStream } from "@weysabi/sabi/stream";
+
+const response = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({ messages }),
+});
+
+for await (const chunk of readStream(response.body)) {
+  console.log(chunk.content);
+}
+```

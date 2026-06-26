@@ -14,6 +14,12 @@ export function createServerConfig(): Beacon {
       secret: true,
       description: "Admin API key (grants all scopes)",
     },
+    SABI_ADMIN_API_KEY: {
+      type: "string",
+      required: false,
+      secret: true,
+      description: "Dedicated API key for /v1/admin endpoints",
+    },
     SABI_API_KEYS: {
       type: "string",
       required: false,

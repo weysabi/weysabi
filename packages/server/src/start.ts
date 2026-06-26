@@ -41,6 +41,7 @@ const sabi = createWeysabi(providers);
 const port = config.get<number>("SABI_PORT");
 const hostname = config.get<string>("SABI_HOST");
 const apiKey = config.get<string>("SABI_API_KEY") || undefined;
+const adminApiKey = config.get<string>("SABI_ADMIN_API_KEY") || undefined;
 const apiKeys = process.env.SABI_API_KEYS ? parseApiKeys(process.env.SABI_API_KEYS) : undefined;
 const corsOrigins = config
   .get<string>("SABI_CORS_ORIGINS")
@@ -59,6 +60,7 @@ const server = await createServer(sabi, {
   port,
   hostname,
   apiKey,
+  adminApiKey,
   apiKeys,
   corsOrigins,
   rateLimitRpm,

@@ -1,0 +1,62 @@
+---
+title: Guardrails
+description: Apply PII, injection, content, token, and custom validation policies.
+---
+
+Guardrails run as a Weysabi plugin and can inspect both input and output.
+
+## Configure the plugin
+
+```ts
+import { createGuardrails } from "@weysabi/sabi/guardrails";
+
+sabi.use(
+  createGuardrails({
+    input: {
+      pii: {
+        email: { action: "redact" },
+        credit_card: { action: "block" },
+      },
+      injection: { block: true, threshold: 0.5 },
+      content: {
+        hate: { action: "block" },
+        harassment: { action: "block" },
+      },
+    },
+    output: {
+      pii: { email: { action: "redact" } },
+      tokenLimit: { maxTokens: 4096, action: "truncate" },
+    },
+    moderationApiKey: process.env.OPENAI_API_KEY,
+  })
+);
+```
+
+## PII actions
+
+| Action        | Behavior                                  |
+| ------------- | ----------------------------------------- |
+| `block`       | Reject the request or response            |
+| `redact`      | Replace detected data                     |
+| `warn`        | Emit a warning and continue               |
+| `passthrough` | Record the match without changing content |
+
+PII categories include email, phone, SSN, credit card, API key, and IP address.
+
+## Custom rules
+
+```ts
+sabi.guardrail("internal-secret", {
+  scope: "both",
+  validate(text) {
+    return text.includes("internal-secret")
+      ? { passed: false, message: "Sensitive phrase detected" }
+      : { passed: true };
+  },
+});
+```
+
+<Callout type="warn" title="Defense in depth">
+  Guardrails reduce risk; they do not replace authorization, output escaping, provider safety
+  controls, or application-specific review.
+</Callout>

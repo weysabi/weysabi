@@ -1,0 +1,76 @@
+---
+title: RAG and memory
+description: Ingest local content, query vector indexes, and persist conversation context.
+---
+
+## Configure embeddings
+
+```ts
+const sabi = createWeysabi({
+  openai: { apiKey: process.env.OPENAI_API_KEY! },
+});
+
+await sabi.rag.setProviders({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+});
+```
+
+## Ingest and query
+
+```ts
+await sabi.rag.load("README.md");
+await sabi.rag.load("./docs");
+await sabi.rag.load({
+  name: "runbook.txt",
+  content: "Production rollback procedure...",
+});
+
+const results = await sabi.rag.query("How do I roll back production?");
+```
+
+## Track ingestion
+
+```ts
+for await (const event of sabi.rag.loadStream("./knowledge-base")) {
+  console.log(event.type, event);
+}
+```
+
+## Isolate projects
+
+```ts
+import { RagManager } from "@weysabi/sabi/rag";
+
+const manager = new RagManager({
+  basePath: ".sabi/rag/projects",
+  providers: {
+    embeddingProvider: {
+      provider: "openai",
+      apiKey: process.env.OPENAI_API_KEY!,
+    },
+  },
+});
+
+const docs = manager.project("documentation");
+await docs.load("./docs");
+```
+
+## Conversation memory
+
+```ts
+import { ConversationMemory, SqliteSessionStore } from "@weysabi/sabi/chat";
+
+const memory = new ConversationMemory("session-123", {
+  store: new SqliteSessionStore(),
+  maxTurns: 10,
+});
+
+await memory.add("user", "How do I deploy?");
+const messages = await memory.getMessages();
+```
+
+<Callout type="info">
+  `ConversationMemory` is a low-level state primitive. Project-scoped conversations, run records,
+  and managed message endpoints are planned for the server control plane.
+</Callout>

@@ -1,0 +1,70 @@
+---
+title: Running the server
+description: Deploy the authenticated OpenAI-compatible Weysabi server.
+---
+
+## Install and start
+
+```bash
+bun add @weysabi/server
+SABI_GROQ_API_KEY=gsk_... bunx weysabi-server
+```
+
+## Essential configuration
+
+| Variable              | Default   | Description                |
+| --------------------- | --------- | -------------------------- |
+| `SABI_PORT`           | `3000`    | HTTP listen port           |
+| `SABI_HOST`           | `0.0.0.0` | Listen address             |
+| `SABI_API_KEY`        | —         | Runtime API credential     |
+| `SABI_ADMIN_API_KEY`  | —         | Dedicated admin credential |
+| `SABI_RATE_LIMIT_RPM` | `300`     | Requests per minute        |
+| `SABI_CORS_ORIGINS`   | `*`       | Allowed origins            |
+| `SABI_MODEL_ALIASES`  | —         | Comma-separated aliases    |
+
+Admin routes are not registered unless `SABI_ADMIN_API_KEY` is configured.
+
+## Endpoints
+
+| Method | Path                   | Scope               |
+| ------ | ---------------------- | ------------------- |
+| `POST` | `/v1/chat/completions` | `chat:write`        |
+| `GET`  | `/v1/models`           | `models:read`       |
+| `GET`  | `/health`              | Public              |
+| `GET`  | `/v1/admin/stats`      | Dedicated admin key |
+| `GET`  | `/v1/admin/usage`      | Dedicated admin key |
+
+## OpenAI client compatibility
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:3000/v1",
+  apiKey: process.env.SABI_API_KEY!,
+});
+
+const response = await client.chat.completions.create({
+  model: "groq/llama-4-scout",
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+## Programmatic server
+
+```ts
+import { createServer } from "@weysabi/server";
+
+const server = await createServer(sabi, {
+  port: 3000,
+  apiKey: process.env.SABI_API_KEY,
+  adminApiKey: process.env.SABI_ADMIN_API_KEY,
+});
+
+await server.stop();
+```
+
+<Callout type="warn" title="Production persistence">
+  In-memory rate limits, idempotency, quotas, and usage accounting are single-process. Inject shared
+  stores when running multiple replicas.
+</Callout>

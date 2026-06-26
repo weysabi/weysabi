@@ -53,6 +53,9 @@ export const openaiHandler: ProviderHandler = {
     if (params.topP !== undefined) body.top_p = params.topP;
     if (params.stop !== undefined) body.stop = params.stop;
     if (params.stream) body.stream = true;
+    if (params.stream && params.includeUsage) {
+      body.stream_options = { include_usage: true };
+    }
     if (params.responseFormat !== undefined) body.response_format = params.responseFormat;
     const tools = formatTools(params.tools);
     if (tools) body.tools = tools;

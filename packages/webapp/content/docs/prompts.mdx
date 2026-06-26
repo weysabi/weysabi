@@ -1,0 +1,70 @@
+---
+title: Prompt management
+description: Define reusable prompt templates and execute them through the Weysabi pipeline.
+---
+
+The SDK prompt registry is intended for code-defined prompts shipped with an application. Managed, project-scoped prompt versioning is planned for the server control plane.
+
+## Register a prompt
+
+```ts
+import { z } from "zod";
+
+sabi.prompts.register({
+  id: "classify-ticket",
+  messages: [
+    {
+      role: "system",
+      content: "Classify customer support tickets.",
+    },
+    {
+      role: "user",
+      content: "Ticket:\n\n{ticket}",
+    },
+  ],
+  model: "groq/llama-4-scout",
+  temperature: 0.2,
+  maxTokens: 80,
+  schema: z.object({
+    category: z.enum(["billing", "technical", "account", "feature"]),
+  }),
+});
+```
+
+## Render and execute
+
+```ts
+const result = await sabi.prompts.run("classify-ticket", {
+  ticket: "I was charged twice this month.",
+});
+
+console.log(result.parsed?.category);
+```
+
+## Runtime overrides
+
+```ts
+const result = await sabi.prompts.run(
+  "classify-ticket",
+  { ticket },
+  {
+    model: "openai/gpt-4o-mini",
+    temperature: 0,
+  }
+);
+```
+
+## Registry operations
+
+```ts
+sabi.prompts.registerMany(definitions);
+sabi.prompts.has("classify-ticket");
+sabi.prompts.get("classify-ticket");
+sabi.prompts.list();
+sabi.prompts.remove("classify-ticket");
+```
+
+<Callout type="info" title="Registry versus control plane">
+  The registry is in-memory and application-owned. Persistent drafts, immutable versions,
+  publishing, rollback, and project isolation belong to the planned control plane.
+</Callout>

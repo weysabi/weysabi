@@ -8,4 +8,5 @@ logs/
 *.log
 .DS_Store
 .sabi/
+.source/
 *.hnsw.idx

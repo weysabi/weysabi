@@ -1,0 +1,86 @@
+---
+title: Providers and failover
+description: Configure provider credentials, endpoints, retry policy, and fallback chains.
+---
+
+## Supported providers
+
+| Provider      | Handler           | Environment variable |
+| ------------- | ----------------- | -------------------- |
+| Groq          | OpenAI-compatible | `GROQ_API_KEY`       |
+| OpenAI        | OpenAI-compatible | `OPENAI_API_KEY`     |
+| Anthropic     | Messages API      | `ANTHROPIC_API_KEY`  |
+| Google Gemini | Gemini API        | `GOOGLE_API_KEY`     |
+| Mistral       | Mistral API       | `MISTRAL_API_KEY`    |
+| NVIDIA        | OpenAI-compatible | `NVIDIA_API_KEY`     |
+| DeepSeek      | OpenAI-compatible | `DEEPSEEK_API_KEY`   |
+| Together      | OpenAI-compatible | `TOGETHER_API_KEY`   |
+| OpenRouter    | OpenAI-compatible | `OPENROUTER_API_KEY` |
+| Ollama        | Ollama API        | Optional             |
+
+## Configure multiple providers
+
+```ts
+const sabi = createWeysabi({
+  groq: { apiKey: process.env.GROQ_API_KEY! },
+  openai: { apiKey: process.env.OPENAI_API_KEY! },
+  anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
+  google: { apiKey: process.env.GOOGLE_API_KEY! },
+});
+```
+
+## Compatible endpoints
+
+Point an OpenAI-compatible handler at a custom base URL:
+
+```ts
+const sabi = createWeysabi({
+  internal: {
+    apiKey: process.env.INTERNAL_MODEL_KEY!,
+    baseUrl: "https://models.example.com/v1",
+  },
+});
+```
+
+## Timeout and retry policy
+
+```ts
+const sabi = createWeysabi(
+  {
+    groq: {
+      apiKey: process.env.GROQ_API_KEY!,
+      timeout: 15_000,
+      retry: {
+        maxRetries: 3,
+        statusCodes: [429, 500, 502, 503],
+        backoffMs: 500,
+      },
+    },
+  },
+  {
+    timeout: 10_000,
+    circuitBreaker: {
+      threshold: 5,
+      cooldownMs: 30_000,
+      windowMs: 60_000,
+    },
+  }
+);
+```
+
+Per-provider settings override global defaults.
+
+## Fallback chains
+
+```ts
+const response = await sabi.complete({
+  model: "groq/llama-4-scout",
+  fallbacks: ["openai/gpt-4o-mini", "anthropic/claude-3-5-haiku-20241022"],
+  messages,
+});
+```
+
+<Callout type="warn" title="Keep model IDs explicit">
+  Use stable provider model IDs in production and test fallback behavior before relying on it during
+  an incident.
+</Callout>

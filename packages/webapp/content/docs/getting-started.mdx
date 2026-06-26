@@ -1,0 +1,76 @@
+---
+title: Getting started
+description: Install Weysabi and send your first provider-neutral completion.
+---
+
+## Install
+
+```bash
+bun add @weysabi/sabi
+```
+
+## Configure providers
+
+```ts
+import { createWeysabi } from "@weysabi/sabi";
+
+const sabi = createWeysabi({
+  groq: { apiKey: process.env.GROQ_API_KEY! },
+  openai: { apiKey: process.env.OPENAI_API_KEY! },
+});
+```
+
+Provider credentials remain in your process. They are sent only to the provider you select.
+
+## Send a completion
+
+```ts
+const response = await sabi.complete({
+  model: "groq/llama-4-scout",
+  messages: [{ role: "user", content: "Explain optimistic locking in two sentences." }],
+});
+
+console.log(response.content);
+console.log(response.usage);
+```
+
+Models use `provider/model-id` notation. The provider prefix selects the configured handler.
+
+## Add failover
+
+Use `fallbacks` when the primary provider is unavailable:
+
+```ts
+const response = await sabi.complete({
+  model: "groq/llama-4-scout",
+  fallbacks: ["openai/gpt-4o-mini"],
+  messages: [{ role: "user", content: "Summarize this incident report." }],
+});
+```
+
+Weysabi applies provider retries and circuit-breaker behavior before moving to the next model.
+
+## Stream output
+
+```ts
+for await (const chunk of sabi.stream({
+  model: "groq/llama-4-scout",
+  messages: [{ role: "user", content: "Count from one to five." }],
+})) {
+  process.stdout.write(chunk.content);
+}
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Provider configuration" href="/docs/providers">
+    Configure timeouts, retries, compatible endpoints, and failover.
+  </Card>
+  <Card title="Structured prompts" href="/docs/prompts">
+    Register reusable prompts with typed inputs and output schemas.
+  </Card>
+  <Card title="Production server" href="/docs/running-the-server">
+    Deploy Weysabi behind an OpenAI-compatible API.
+  </Card>
+</Cards>

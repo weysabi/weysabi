@@ -6,5 +6,6 @@ bun.lock
 *.yml
 *.yaml
 .next
+.source
 out
 next-env.d.ts

@@ -1,0 +1,80 @@
+---
+title: API reference
+description: Core SDK methods, request types, exports, and server entry points.
+---
+
+## Core methods
+
+### `createWeysabi`
+
+```ts
+createWeysabi(
+  providers: Record<string, ProviderConfig>,
+  options?: WeysabiOptions,
+): Weysabi
+```
+
+Creates a configured Weysabi instance.
+
+### `sabi.complete`
+
+```ts
+complete<T>(request: CompleteRequest): Promise<CompleteResponse<T>>
+```
+
+Executes a completion with retries, failover, plugins, caching, and optional structured validation.
+
+### `sabi.stream`
+
+```ts
+stream(request: StreamRequest): AsyncIterable<StreamChunk>
+```
+
+Streams provider output and accepts an `AbortSignal`.
+
+## Request shape
+
+```ts
+interface CompleteRequest {
+  model: string | string[];
+  fallbacks?: string[];
+  messages: Message[];
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  stop?: string | string[];
+  responseFormat?: ResponseFormat;
+  signal?: AbortSignal;
+}
+```
+
+## Common exports
+
+| Export                     | Purpose                    |
+| -------------------------- | -------------------------- |
+| `@weysabi/sabi`            | Core SDK and types         |
+| `@weysabi/sabi/errors`     | Typed SDK errors           |
+| `@weysabi/sabi/prompts`    | Prompt primitives          |
+| `@weysabi/sabi/rag`        | RAG engine and manager     |
+| `@weysabi/sabi/chat`       | Conversation memory stores |
+| `@weysabi/sabi/guardrails` | Guardrails plugin          |
+| `@weysabi/sabi/ai-sdk`     | Vercel AI SDK adapter      |
+| `@weysabi/sabi/otel`       | OpenTelemetry integration  |
+| `@weysabi/sabi/sse`        | SSE response adapter       |
+| `@weysabi/server`          | OpenAI-compatible server   |
+
+## Errors
+
+All SDK errors extend `SabiError`. Common subclasses include:
+
+- `ProviderRequestError`
+- `CircuitBreakerOpenError`
+- `AllModelsFailedError`
+- `SchemaValidationError`
+- `GuardrailError`
+- `PromptNotFoundError`
+
+<Callout type="info">
+  The TypeScript declarations shipped with each package are the authoritative API reference. This
+  page summarizes the stable public surface.
+</Callout>

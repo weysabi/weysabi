@@ -1,0 +1,16 @@
+{
+  "title": "Weysabi",
+  "pages": [
+    "index",
+    "getting-started",
+    "---Core SDK---",
+    "providers",
+    "prompts",
+    "streaming",
+    "guardrails",
+    "rag",
+    "---Deploy---",
+    "running-the-server",
+    "api"
+  ]
+}

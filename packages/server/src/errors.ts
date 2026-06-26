@@ -78,6 +78,13 @@ export class ModelAliasNotFoundError extends ServerError {
   }
 }
 
+export class ModelAliasCycleError extends ServerError {
+  constructor(alias: string) {
+    super(400, "MODEL_ALIAS_CYCLE", `Model alias cycle detected at "${alias}"`);
+    this.name = "ModelAliasCycleError";
+  }
+}
+
 export class QuotaExceededError extends ServerError {
   constructor(message: string) {
     super(429, "QUOTA_EXCEEDED", message);

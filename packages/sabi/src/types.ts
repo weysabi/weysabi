@@ -135,6 +135,8 @@ export const CompleteRequestSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   topP: z.number().min(0).max(1).optional(),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
+  responseFormat: z.record(z.string(), z.unknown()).optional(),
+  includeUsage: z.boolean().optional(),
   schema: z.any().optional(),
   schemaMaxRetries: z.number().int().min(0).max(10).optional(),
   tools: z.array(ToolDefinitionSchema).optional(),
@@ -178,6 +180,8 @@ export const StreamRequestSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   topP: z.number().min(0).max(1).optional(),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
+  responseFormat: z.record(z.string(), z.unknown()).optional(),
+  includeUsage: z.boolean().optional(),
   tools: z.array(ToolDefinitionSchema).optional(),
   signal: z.custom<AbortSignal>((value) => value instanceof AbortSignal).optional(),
 });
@@ -256,6 +260,7 @@ export function cacheKey(request: CompleteRequest): string {
     maxTokens: request.maxTokens,
     topP: request.topP,
     stop: request.stop,
+    responseFormat: request.responseFormat,
     schema: request.schema ? zodToJsonSchema(request.schema) : undefined,
     schemaMaxRetries: request.schemaMaxRetries,
     tools: request.tools?.map((tool) => ({

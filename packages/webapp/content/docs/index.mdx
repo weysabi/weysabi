@@ -1,0 +1,42 @@
+---
+title: Documentation
+description: Build, run, and operate provider-neutral AI applications with Weysabi.
+---
+
+Weysabi is local-first TypeScript infrastructure for production AI applications. It gives you one execution API across providers while keeping requests, credentials, and application data in your infrastructure.
+
+## Choose your path
+
+<Cards>
+  <Card title="Install the SDK" href="/docs/getting-started">
+    Send your first completion, stream output, and configure provider failover.
+  </Card>
+  <Card title="Run the server" href="/docs/running-the-server">
+    Expose an authenticated, OpenAI-compatible HTTP endpoint.
+  </Card>
+  <Card title="Manage prompts" href="/docs/prompts">
+    Define typed templates and execute them through the provider pipeline.
+  </Card>
+  <Card title="Add retrieval" href="/docs/rag">
+    Ingest local content and query it with the built-in RAG engine.
+  </Card>
+</Cards>
+
+## What Weysabi handles
+
+- Provider dispatch, retries, circuit breaking, and fallback
+- Streaming and framework adapters
+- Structured output with Zod
+- Typed prompt templates
+- Guardrails and telemetry hooks
+- Local RAG and persistent conversation memory
+- An optional OpenAI-compatible server
+
+## What stays yours
+
+Your application owns authentication, provider credentials, databases, user authorization, retention policy, and deployment. Weysabi does not require traffic to pass through a hosted gateway.
+
+<Callout type="info" title="Current release">
+  The current workspace release is `v0.9.0`. Server control-plane APIs for projects, managed prompt
+  versions, and conversations are planned but are not part of this release.
+</Callout>

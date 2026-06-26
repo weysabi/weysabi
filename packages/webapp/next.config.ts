@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+import { createMDX } from "fumadocs-mdx/next";
 
 const config: NextConfig = {
   output: "export",
@@ -7,4 +8,8 @@ const config: NextConfig = {
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
 };
 
-export default config;
+const withMDX = createMDX({
+  configPath: fileURLToPath(new URL("./source.config.mjs", import.meta.url)),
+});
+
+export default withMDX(config);

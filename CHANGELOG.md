@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.9.0
+
+### Added
+
+- Server CLI, configurable host binding, model aliases, quotas, and usage accounting
+- Dedicated `SABI_ADMIN_API_KEY` protection for admin routes
+- Redis-injectable rate-limit and idempotency stores
+- Next.js documentation site and self-hosted administration interface
+- OpenAI compatibility for `max_completion_tokens`, `response_format`, and streaming usage
+
+### Security
+
+- API-key accounting uses full SHA-256 fingerprints instead of key prefixes
+- Admin routes are absent unless explicitly enabled
+- Admin credentials are not embedded in public variables or browser storage
+- Admin query pagination and key filters are validated and bounded
+
+### Fixed
+
+- CLI init connectivity checks resolve credentials from the environment
+- Server shutdown closes owned resources
+- Idempotency keys reject reuse with a different request
+- Client cancellation aborts upstream provider streams
+
 ## v0.7.1
 
 ### Added
