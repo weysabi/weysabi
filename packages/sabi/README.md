@@ -33,31 +33,31 @@ console.log(res.parsed.total, res.latencyMs);
 
 ## Features
 
-| Feature | Status |
-|---|---|
-| Provider abstraction (OpenAI, Groq, Anthropic, Google, Mistral, DeepSeek, OpenRouter, Together, Nvidia, Ollama) | ✅ |
-| Custom / OpenAI-compatible endpoints | ✅ |
-| Provider failover (primary → fallbacks) | ✅ |
-| Circuit breaker + retry + backoff | ✅ |
-| Streaming (SSE, async iterable) | ✅ |
-| Structured output (Zod schemas with auto-retry) | ✅ |
-| Tool calling (auto-execute + chaining) | ✅ |
-| Prompt templates with `{variable}` substitution | ✅ |
-| Prompt registry (register, render, run) | ✅ |
-| RAG engine (ingest, embed, HNSW search, persist) | ✅ |
-| Multi-project RAG manager | ✅ |
-| Guardrails (PII redaction, injection detection, content safety, token limits) | ✅ |
-| Conversation memory (SQLite/Postgres, auto-truncation) | ✅ |
-| ChatSDK (prepare + call + record in one) | ✅ |
-| Framework adapters (Hono, Next.js, Express, Fastify, Elysia) | ✅ |
-| Caching (InMemory, Redis, BYO) | ✅ |
-| Plugin system (lifecycle hooks) | ✅ |
-| OpenTelemetry integration | ✅ |
-| Vercel AI SDK adapter | ✅ |
-| Cost estimation (per-response `estimatedCostUsd`) | ✅ |
-| CLI (`sabi init`, `complete`, `stream`, `config`, `prompt`) | ✅ |
-| Control plane — projects, conversations, runs, API keys | 🔜 |
-| Weysabi Cloud — hosted control plane, evals, monitoring | 🔜 |
+| Feature                                                                                                         | Status |
+| --------------------------------------------------------------------------------------------------------------- | ------ |
+| Provider abstraction (OpenAI, Groq, Anthropic, Google, Mistral, DeepSeek, OpenRouter, Together, Nvidia, Ollama) | ✅     |
+| Custom / OpenAI-compatible endpoints                                                                            | ✅     |
+| Provider failover (primary → fallbacks)                                                                         | ✅     |
+| Circuit breaker + retry + backoff                                                                               | ✅     |
+| Streaming (SSE, async iterable)                                                                                 | ✅     |
+| Structured output (Zod schemas with auto-retry)                                                                 | ✅     |
+| Tool calling (auto-execute + chaining)                                                                          | ✅     |
+| Prompt templates with `{variable}` substitution                                                                 | ✅     |
+| Prompt registry (register, render, run)                                                                         | ✅     |
+| RAG engine (ingest, embed, HNSW search, persist)                                                                | ✅     |
+| Multi-project RAG manager                                                                                       | ✅     |
+| Guardrails (PII redaction, injection detection, content safety, token limits)                                   | ✅     |
+| Conversation memory (SQLite/Postgres, auto-truncation)                                                          | ✅     |
+| ChatSDK (prepare + call + record in one)                                                                        | ✅     |
+| Framework adapters (Hono, Next.js, Express, Fastify, Elysia)                                                    | ✅     |
+| Caching (InMemory, Redis, BYO)                                                                                  | ✅     |
+| Plugin system (lifecycle hooks)                                                                                 | ✅     |
+| OpenTelemetry integration                                                                                       | ✅     |
+| Vercel AI SDK adapter                                                                                           | ✅     |
+| Cost estimation (per-response `estimatedCostUsd`)                                                               | ✅     |
+| CLI (`sabi init`, `create`, `complete`, `stream`, `config`, `prompt`)                                           | ✅     |
+| Control plane — projects, conversations, runs, API keys                                                         | 🔜     |
+| Weysabi Cloud — hosted control plane, evals, monitoring                                                         | 🔜     |
 
 ## Install
 
@@ -117,11 +117,13 @@ Pass a Zod schema. Weysabi validates the response and retries on parse failure.
 import { z } from "zod";
 
 const CalendarSchema = z.object({
-  events: z.array(z.object({
-    title: z.string(),
-    date: z.string(),
-    attendees: z.array(z.string()),
-  })),
+  events: z.array(
+    z.object({
+      title: z.string(),
+      date: z.string(),
+      attendees: z.array(z.string()),
+    })
+  ),
 });
 
 const res = await sabi.complete({
@@ -264,7 +266,7 @@ PII redaction, prompt injection detection, content moderation, and output token 
 const res = await sabi.complete({
   model: "groq/llama-4-scout",
   messages: [{ role: "user", content: "My email is test@example.com" }],
-  guardrails: ["pii"],                     // Redact emails, phones, SSNs
+  guardrails: ["pii"], // Redact emails, phones, SSNs
   // guardrails: ["injection"],            // Detect prompt injection
   // guardrails: ["content"],             // Moderate toxic content
   // guardrails: [{ type: "limits", maxOutputTokens: 100 }],

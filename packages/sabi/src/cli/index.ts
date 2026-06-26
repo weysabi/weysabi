@@ -8,6 +8,7 @@ import { promptListCommand, promptAddCommand, promptRemoveCommand } from "./comm
 import { benchmarkCommand } from "./commands/benchmark";
 import { doctorCommand } from "./commands/doctor";
 import { serverCommand } from "./commands/server";
+import { createCommand } from "./commands/create";
 import packageJson from "../../package.json" with { type: "json" };
 
 const version = packageJson.version;
@@ -23,6 +24,18 @@ program
   .command("init")
   .description("Interactive project scaffolding (providers, prompts, defaults)")
   .action(initCommand);
+
+program
+  .command("create")
+  .description("Create a new Sabi-powered project")
+  .argument("<project-name>", "Project directory to create")
+  .option(
+    "-t, --template <template>",
+    "Template to use: server, nextjs, tanstack, or agent",
+    "server"
+  )
+  .option("--no-install", "Skip dependency installation")
+  .action(createCommand);
 
 program
   .command("config")

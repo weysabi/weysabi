@@ -7,9 +7,10 @@ import {
   providerLabel,
   saveConfig,
 } from "./utils";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { resolve } from "path";
 import { ensureGitignore, upsertEnvFile } from "./commands/init";
+import { createSabiProject, validateProjectName } from "./commands/create";
 
 describe("providerLabel", () => {
   it("returns display name for known providers", () => {
@@ -221,6 +222,76 @@ describe("upsertEnvFile", () => {
       expect(readFileSync(path, "utf-8")).toBe(
         "EXISTING=value\nGROQ_API_KEY=new\nOPENAI_API_KEY=openai-secret\n"
       );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("create command", () => {
+  it("validates project names", () => {
+    expect(validateProjectName("my-app")).toBeNull();
+    expect(validateProjectName("my_app")).toBeNull();
+    expect(validateProjectName("../app")).toBeString();
+    expect(validateProjectName("")).toBeString();
+  });
+
+  it("creates a server starter without installing dependencies", async () => {
+    const tmpDir = mkdtempSync("sabi-create-");
+    try {
+      const result = await createSabiProject("my-app", {
+        cwd: tmpDir,
+        template: "server",
+        install: false,
+      });
+      const projectDir = resolve(tmpDir, "my-app");
+
+      expect(result.nextSteps).toContain("bun run dev");
+      expect(existsSync(resolve(projectDir, "package.json"))).toBeTrue();
+      expect(existsSync(resolve(projectDir, "src/index.ts"))).toBeTrue();
+
+      const server = readFileSync(resolve(projectDir, "src/index.ts"), "utf-8");
+      expect(server).toContain("createServer");
+      expect(server).toContain("createSqliteControlPlaneStore");
+      expect(server).toContain("SABI_ADMIN_API_KEY");
+
+      const env = readFileSync(resolve(projectDir, ".env.example"), "utf-8");
+      expect(env).toContain("OPENAI_API_KEY=");
+      expect(env).toContain("SABI_CONTROL_DB=.sabi/control.db");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not overwrite existing directories", async () => {
+    const tmpDir = mkdtempSync("sabi-create-");
+    try {
+      await createSabiProject("my-app", { cwd: tmpDir, install: false });
+      await expect(createSabiProject("my-app", { cwd: tmpDir, install: false })).rejects.toThrow(
+        "already exists"
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a Next.js starter with server-only chat route", async () => {
+    const tmpDir = mkdtempSync("sabi-create-");
+    try {
+      await createSabiProject("web-chat", {
+        cwd: tmpDir,
+        template: "nextjs",
+        install: false,
+      });
+      const projectDir = resolve(tmpDir, "web-chat");
+
+      expect(existsSync(resolve(projectDir, "app/page.tsx"))).toBeTrue();
+      expect(existsSync(resolve(projectDir, "app/api/chat/route.ts"))).toBeTrue();
+
+      const route = readFileSync(resolve(projectDir, "app/api/chat/route.ts"), "utf-8");
+      expect(route).toContain("createWeysabi");
+      expect(route).toContain("OPENAI_API_KEY");
+      expect(route).not.toContain("NEXT_PUBLIC_OPENAI_API_KEY");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
