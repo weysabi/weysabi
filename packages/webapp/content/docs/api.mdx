@@ -50,18 +50,40 @@ interface CompleteRequest {
 
 ## Common exports
 
-| Export                     | Purpose                    |
-| -------------------------- | -------------------------- |
-| `@weysabi/sabi`            | Core SDK and types         |
-| `@weysabi/sabi/errors`     | Typed SDK errors           |
-| `@weysabi/sabi/prompts`    | Prompt primitives          |
-| `@weysabi/sabi/rag`        | RAG engine and manager     |
-| `@weysabi/sabi/chat`       | Conversation memory stores |
-| `@weysabi/sabi/guardrails` | Guardrails plugin          |
-| `@weysabi/sabi/ai-sdk`     | Vercel AI SDK adapter      |
-| `@weysabi/sabi/otel`       | OpenTelemetry integration  |
-| `@weysabi/sabi/sse`        | SSE response adapter       |
-| `@weysabi/server`          | OpenAI-compatible server   |
+| Export                     | Purpose                     |
+| -------------------------- | --------------------------- |
+| `@weysabi/sabi`            | Core SDK and types          |
+| `@weysabi/sabi/errors`     | Typed SDK errors            |
+| `@weysabi/sabi/prompts`    | Prompt primitives           |
+| `@weysabi/sabi/client`     | Server/control-plane client |
+| `@weysabi/sabi/rag`        | RAG engine and manager      |
+| `@weysabi/sabi/chat`       | Conversation memory stores  |
+| `@weysabi/sabi/guardrails` | Guardrails plugin           |
+| `@weysabi/sabi/ai-sdk`     | Vercel AI SDK adapter       |
+| `@weysabi/sabi/otel`       | OpenTelemetry integration   |
+| `@weysabi/sabi/sse`        | SSE response adapter        |
+| `@weysabi/server`          | OpenAI-compatible server    |
+
+## Control-plane client
+
+```ts
+import { createSabiClient, createSabiProjectClient } from "@weysabi/sabi/client";
+
+const admin = createSabiClient({
+  baseUrl: "http://localhost:3000",
+  apiKey: process.env.SABI_ADMIN_API_KEY!,
+});
+
+const project = createSabiProjectClient({
+  baseUrl: "http://localhost:3000",
+  apiKey: process.env.SABI_PROJECT_API_KEY!,
+  projectId: process.env.SABI_PROJECT_ID!,
+});
+```
+
+Use `createSabiClient()` for admin operations such as creating projects and issuing project keys.
+Use `createSabiProjectClient()` for project-scoped backend routes such as chat, prompts, documents,
+and usage views.
 
 ## Errors
 

@@ -18,21 +18,24 @@ SABI_GROQ_API_KEY=gsk_... bunx weysabi-server
 | `SABI_HOST`           | `0.0.0.0` | Listen address             |
 | `SABI_API_KEY`        | —         | Runtime API credential     |
 | `SABI_ADMIN_API_KEY`  | —         | Dedicated admin credential |
+| `SABI_CONTROL_DB`     | —         | SQLite control-plane path  |
 | `SABI_RATE_LIMIT_RPM` | `300`     | Requests per minute        |
 | `SABI_CORS_ORIGINS`   | `*`       | Allowed origins            |
 | `SABI_MODEL_ALIASES`  | —         | Comma-separated aliases    |
 
-Admin routes are not registered unless `SABI_ADMIN_API_KEY` is configured.
+Admin routes are not registered unless `SABI_ADMIN_API_KEY` is configured. Control-plane routes also
+require a `controlPlaneStore` when creating the server programmatically.
 
 ## Endpoints
 
-| Method | Path                   | Scope               |
-| ------ | ---------------------- | ------------------- |
-| `POST` | `/v1/chat/completions` | `chat:write`        |
-| `GET`  | `/v1/models`           | `models:read`       |
-| `GET`  | `/health`              | Public              |
-| `GET`  | `/v1/admin/stats`      | Dedicated admin key |
-| `GET`  | `/v1/admin/usage`      | Dedicated admin key |
+| Method | Path                   | Scope                |
+| ------ | ---------------------- | -------------------- |
+| `POST` | `/v1/chat/completions` | `chat:write`         |
+| `GET`  | `/v1/models`           | `models:read`        |
+| `GET`  | `/health`              | Public               |
+| `GET`  | `/v1/admin/stats`      | Dedicated admin key  |
+| `GET`  | `/v1/admin/usage`      | Dedicated admin key  |
+| `*`    | `/v1/projects/*`       | Admin or project key |
 
 ## OpenAI client compatibility
 
@@ -53,15 +56,34 @@ const response = await client.chat.completions.create({
 ## Programmatic server
 
 ```ts
-import { createServer } from "@weysabi/server";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { createServer, createSqliteControlPlaneStore } from "@weysabi/server";
+
+const controlDb = ".sabi/control.db";
+mkdirSync(dirname(controlDb), { recursive: true });
 
 const server = await createServer(sabi, {
   port: 3000,
   apiKey: process.env.SABI_API_KEY,
   adminApiKey: process.env.SABI_ADMIN_API_KEY,
+  controlPlaneStore: createSqliteControlPlaneStore(controlDb),
 });
 
 await server.stop();
+```
+
+## Backend control-plane client
+
+```ts
+import { createSabiClient } from "@weysabi/sabi/client";
+
+const client = createSabiClient({
+  baseUrl: "http://localhost:3000",
+  apiKey: process.env.SABI_ADMIN_API_KEY!,
+});
+
+const projects = await client.projects.list();
 ```
 
 <Callout type="warn" title="Production persistence">

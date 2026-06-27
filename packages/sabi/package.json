@@ -64,6 +64,11 @@
       "import": "./src/cache.ts",
       "default": "./src/cache.ts"
     },
+    "./client": {
+      "types": "./src/client.ts",
+      "import": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
     "./rag": {
       "types": "./src/rag/index.ts",
       "import": "./src/rag/index.ts",

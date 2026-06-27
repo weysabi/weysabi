@@ -1,0 +1,155 @@
+---
+title: Control plane
+description: Manage projects, prompts, conversations, runs, documents, and project API keys.
+---
+
+The control plane is the managed server API for application state. Use it from backend code to
+create projects, publish prompts, issue scoped project keys, and send managed conversation messages.
+
+Frontend code should call your application API. It should not receive provider keys, admin keys, or
+long-lived project keys.
+
+## Responsibilities
+
+| Role         | Uses                                      | Owns                                                                 |
+| ------------ | ----------------------------------------- | -------------------------------------------------------------------- |
+| Frontend dev | Your app route, for example `/api/chat`   | UI state, message rendering, abort/retry UX                          |
+| Backend dev  | `@weysabi/sabi/client` or raw HTTP routes | Project setup, prompt publishing, scoped keys, auth, tenant mapping  |
+| Sabi server  | `/v1/projects/*`                          | Prompt versions, conversations, messages, runs, documents, key store |
+
+## Start the server with persistence
+
+```ts
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { createWeysabi } from "@weysabi/sabi";
+import { createServer, createSqliteControlPlaneStore } from "@weysabi/server";
+
+const dbPath = process.env.SABI_CONTROL_DB ?? ".sabi/control.db";
+mkdirSync(dirname(dbPath), { recursive: true });
+
+const sabi = createWeysabi(
+  {
+    openai: { apiKey: process.env.OPENAI_API_KEY! },
+  },
+  {
+    defaultModel: "openai/gpt-4o-mini",
+  }
+);
+
+await createServer(sabi, {
+  apiKey: process.env.SABI_API_KEY,
+  adminApiKey: process.env.SABI_ADMIN_API_KEY,
+  controlPlaneStore: createSqliteControlPlaneStore(dbPath),
+});
+```
+
+## Backend setup flow
+
+Use the admin key only in trusted backend code.
+
+```ts
+import { createSabiClient } from "@weysabi/sabi/client";
+
+const sabi = createSabiClient({
+  baseUrl: "http://localhost:3000",
+  apiKey: process.env.SABI_ADMIN_API_KEY!,
+});
+
+const project = await sabi.projects.create({
+  name: "Acme Support",
+  slug: "acme-support",
+  settings: {
+    defaultModel: "openai/gpt-4o-mini",
+  },
+});
+
+const prompt = await sabi.project(project.id).prompts.create({
+  name: "Support Agent",
+  slug: "support-agent",
+});
+
+const version = await sabi.project(project.id).prompts.versions.create(prompt.id, {
+  model: "openai/gpt-4o-mini",
+  messages: [
+    { role: "system", content: "You support {company}." },
+    { role: "user", content: "{message}" },
+  ],
+});
+
+await sabi.project(project.id).prompts.versions.publish(prompt.id, version.id);
+
+const key = await sabi.project(project.id).apiKeys.create({
+  name: "App backend chat key",
+  scopes: ["chat:write", "conversations:read", "conversations:write"],
+});
+
+// Store key.secret in your backend secret manager. It is returned once.
+```
+
+## Application chat route
+
+Your application maps its authenticated user and tenant to a Sabi project and conversation. The
+browser never needs to know those IDs unless your application wants it to.
+
+```ts
+import { createSabiProjectClient } from "@weysabi/sabi/client";
+
+export async function POST(request: Request) {
+  const { message, conversationId } = (await request.json()) as {
+    message: string;
+    conversationId: string;
+  };
+
+  const project = createSabiProjectClient({
+    baseUrl: process.env.SABI_BASE_URL!,
+    apiKey: process.env.SABI_PROJECT_API_KEY!,
+    projectId: process.env.SABI_PROJECT_ID!,
+  });
+
+  const result = await project.conversations.messages.send(
+    conversationId,
+    {
+      content: message,
+      prompt: "support-agent",
+      promptInputs: { company: "Acme" },
+    },
+    {
+      idempotencyKey: request.headers.get("idempotency-key") ?? undefined,
+    }
+  );
+
+  return Response.json({
+    message: result.assistantMessage,
+    run: result.run,
+  });
+}
+```
+
+## Streaming
+
+```ts
+const events = await project.conversations.messages.stream(conversationId, {
+  content: message,
+  prompt: "support-agent",
+  promptInputs: { company: "Acme" },
+});
+
+for await (const event of events) {
+  if (event.type === "content.delta") {
+    process.stdout.write(event.content);
+  }
+}
+```
+
+## Auth model
+
+- `SABI_ADMIN_API_KEY` can manage projects and issue project keys.
+- Stored project keys are bound to one project.
+- Project keys require scopes such as `chat:write`, `prompts:read`, or `project:admin`.
+- Static chat API keys for `/v1/chat/completions` do not grant control-plane access.
+
+<Callout type="warn" title="Keep keys server-side">
+  Project keys are narrower than admin keys, but they are still credentials. Put them in backend
+  environment variables or a secret manager, not in browser bundles.
+</Callout>

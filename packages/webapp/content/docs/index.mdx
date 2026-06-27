@@ -14,6 +14,9 @@ Weysabi is local-first TypeScript infrastructure for production AI applications.
   <Card title="Run the server" href="/docs/running-the-server">
     Expose an authenticated, OpenAI-compatible HTTP endpoint.
   </Card>
+  <Card title="Use the control plane" href="/docs/control-plane">
+    Manage projects, prompts, conversations, runs, documents, and project keys.
+  </Card>
   <Card title="Manage prompts" href="/docs/prompts">
     Define typed templates and execute them through the provider pipeline.
   </Card>
@@ -30,13 +33,13 @@ Weysabi is local-first TypeScript infrastructure for production AI applications.
 - Typed prompt templates
 - Guardrails and telemetry hooks
 - Local RAG and persistent conversation memory
-- An optional OpenAI-compatible server
+- An optional OpenAI-compatible server with a project-scoped control plane
 
 ## What stays yours
 
 Your application owns authentication, provider credentials, databases, user authorization, retention policy, and deployment. Weysabi does not require traffic to pass through a hosted gateway.
 
-<Callout type="info" title="Current release">
-  The current workspace release is `v0.9.0`. Server control-plane APIs for projects, managed prompt
-  versions, and conversations are planned but are not part of this release.
+<Callout type="info" title="Control-plane split">
+  Frontend code should call your application API. Backend code uses Sabi provider keys, admin keys,
+  project keys, and control-plane clients.
 </Callout>
