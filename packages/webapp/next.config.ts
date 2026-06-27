@@ -3,7 +3,6 @@ import type { NextConfig } from "next";
 import { createMDX } from "fumadocs-mdx/next";
 
 const config: NextConfig = {
-  output: "export",
   images: { unoptimized: true },
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
 };
