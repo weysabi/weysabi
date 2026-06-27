@@ -755,6 +755,66 @@ describe("Control plane HTTP routes", () => {
       expect(runs.items[0]?.status).toBe("success");
     });
 
+    it("accepts promptVersionId when sending a managed conversation message", async () => {
+      completeRequests = [];
+      const promptRes = await router.fetch(
+        controlRequest(`http://localhost/v1/projects/${projectId}/prompts`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: `Version Alias ${Date.now()}`,
+            slug: `version-alias-${Date.now()}`,
+          }),
+        })
+      );
+      expect(promptRes.status).toBe(201);
+      const prompt = (await promptRes.json()) as Record<string, unknown>;
+
+      const versionRes = await router.fetch(
+        controlRequest(
+          `http://localhost/v1/projects/${projectId}/prompts/${prompt.id as string}/versions`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              messages: [{ role: "system", content: "Version alias prompt." }],
+              model: "test/model",
+            }),
+          }
+        )
+      );
+      expect(versionRes.status).toBe(201);
+      const version = (await versionRes.json()) as Record<string, unknown>;
+
+      const conversationRes = await router.fetch(
+        controlRequest(`http://localhost/v1/projects/${projectId}/conversations`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: "Prompt version alias chat" }),
+        })
+      );
+      expect(conversationRes.status).toBe(201);
+      const conversation = (await conversationRes.json()) as Record<string, unknown>;
+
+      const sendRes = await router.fetch(
+        controlRequest(
+          `http://localhost/v1/projects/${projectId}/conversations/${conversation.id as string}/messages/send`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              content: "Use a concrete version",
+              promptVersionId: version.id,
+            }),
+          }
+        )
+      );
+      expect(sendRes.status).toBe(201);
+      const sent = (await sendRes.json()) as { run: Record<string, unknown> };
+      expect(sent.run.promptVersionId).toBe(version.id);
+      expect(completeRequests[0]?.messages?.[0]?.content).toBe("Version alias prompt.");
+    });
+
     it("records a failed run while preserving the user message", async () => {
       const conversationRes = await router.fetch(
         controlRequest(`http://localhost/v1/projects/${projectId}/conversations`, {

@@ -71,7 +71,10 @@ export function createAuth(keys: ApiKeyEntry[], options: AuthMiddlewareOptions =
       await next();
       return;
     }
-    if (options.skipProjectRoutes && c.req.path.startsWith("/v1/projects")) {
+    if (
+      options.skipProjectRoutes &&
+      (c.req.path === "/v1/projects" || c.req.path.startsWith("/v1/projects/"))
+    ) {
       await next();
       return;
     }

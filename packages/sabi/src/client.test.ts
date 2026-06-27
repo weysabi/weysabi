@@ -75,6 +75,7 @@ describe("Sabi HTTP client", () => {
         metadata: {},
         createdAt: 1,
       },
+      content: "ok",
     };
     const { fetchImpl, requests } = createMockFetch(jsonResponse(result, { status: 201 }));
     const project = createSabiProjectClient({
@@ -103,6 +104,26 @@ describe("Sabi HTTP client", () => {
     expect(JSON.parse(String(requests[0]?.init.body))).toEqual({
       content: "Hello",
       model: "openai/gpt-4o-mini",
+    });
+  });
+
+  it("maps promptVersionId to the server promptVersion field", async () => {
+    const { fetchImpl, requests } = createMockFetch(jsonResponse({ ok: true }));
+    const project = createSabiProjectClient({
+      baseUrl: "https://sabi.example",
+      apiKey: "sabi_project_key",
+      projectId: "project-1",
+      fetch: fetchImpl,
+    });
+
+    await project.conversations.messages.send("conversation-1", {
+      content: "Hello",
+      promptVersionId: "version-1",
+    });
+
+    expect(JSON.parse(String(requests[0]?.init.body))).toEqual({
+      content: "Hello",
+      promptVersion: "version-1",
     });
   });
 
@@ -199,6 +220,22 @@ describe("Sabi HTTP client", () => {
       status: 403,
       code: "INSUFFICIENT_PERMISSIONS",
       message: "Insufficient permissions. Required scope: prompts:write",
+    } satisfies Partial<SabiApiError>);
+  });
+
+  it("throws a typed API error for non-JSON error responses", async () => {
+    const { fetchImpl } = createMockFetch(new Response("bad gateway", { status: 502 }));
+    const project = createSabiProjectClient({
+      baseUrl: "https://sabi.example",
+      apiKey: "sabi_project_key",
+      projectId: "project-1",
+      fetch: fetchImpl,
+    });
+
+    await expect(project.prompts.list()).rejects.toMatchObject({
+      name: "SabiApiError",
+      status: 502,
+      message: "bad gateway",
     } satisfies Partial<SabiApiError>);
   });
 });

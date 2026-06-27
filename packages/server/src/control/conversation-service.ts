@@ -19,6 +19,7 @@ export const SendConversationMessageInputSchema = z.object({
   content: z.string().min(1),
   prompt: z.string().optional(),
   promptVersion: z.string().optional(),
+  promptVersionId: z.string().optional(),
   promptInputs: z.record(z.string(), z.unknown()).default({}),
   model: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
   fallbacks: z.array(z.string().min(1)).optional(),
@@ -146,7 +147,7 @@ export function createConversationService(sabi: Weysabi, store: ControlPlaneStor
         store,
         parsed.projectId,
         parsed.prompt,
-        parsed.promptVersion
+        parsed.promptVersion ?? parsed.promptVersionId
       );
       const model = parsed.model ?? version?.model ?? project.settings.defaultModel;
       if (!model) {
@@ -288,7 +289,7 @@ export function createConversationService(sabi: Weysabi, store: ControlPlaneStor
         store,
         parsed.projectId,
         parsed.prompt,
-        parsed.promptVersion
+        parsed.promptVersion ?? parsed.promptVersionId
       );
       const model = parsed.model ?? version?.model ?? project.settings.defaultModel;
       if (!model) {

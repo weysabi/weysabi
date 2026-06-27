@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { createWeysabi } from "@weysabi/sabi";
 import { createRouter } from "./routes";
-import { resolveApiKeys, parseApiKeys, resolveClientIp } from "./middleware";
+import { createAuth, resolveApiKeys, parseApiKeys, resolveClientIp } from "./middleware";
 
 describe("resolveClientIp", () => {
   it("ignores forwarded headers from an untrusted peer", () => {
@@ -74,6 +74,27 @@ describe("Server auth", () => {
     const req = new Request("http://localhost/v1/models");
     const res = await noAuthRouter.fetch(req);
     expect(res.status).toBe(200);
+  });
+
+  it("does not skip auth for project-prefix lookalike paths", async () => {
+    const auth = createAuth([{ key: "sk-secret" }], { skipProjectRoutes: true });
+    let nextCalled = false;
+
+    await expect(
+      auth(
+        {
+          req: {
+            path: "/v1/projectsabc",
+            method: "GET",
+            raw: new Request("http://localhost/v1/projectsabc"),
+          },
+        },
+        async () => {
+          nextCalled = true;
+        }
+      )
+    ).rejects.toMatchObject({ code: "INVALID_API_KEY" });
+    expect(nextCalled).toBe(false);
   });
 });
 

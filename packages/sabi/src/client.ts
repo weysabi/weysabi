@@ -184,6 +184,7 @@ export interface SendConversationMessageInput {
   model?: string | string[];
   fallbacks?: string[];
   prompt?: string;
+  promptVersion?: string;
   promptVersionId?: string;
   promptInputs?: Record<string, unknown>;
   externalUserId?: string;
@@ -237,20 +238,20 @@ export interface SendConversationMessageResult {
   userMessage: ConversationMessage;
   assistantMessage: ConversationMessage;
   run: Run;
+  content: string;
 }
 
 export type ConversationEvent =
-  | { type: "message.created"; message: ConversationMessage }
-  | { type: "run.started"; run: Run }
+  | { type: "message.created"; message: ConversationMessage; run: Run }
   | { type: "content.delta"; content: string }
-  | { type: "message.completed"; message: ConversationMessage; run: Run; usage?: ConversationUsage }
+  | { type: "usage"; usage: ConversationUsage }
+  | { type: "message.completed"; message: ConversationMessage; run: Run }
   | {
       type: "message.interrupted";
       message: ConversationMessage;
       run: Run;
-      error: { message: string; code: string };
     }
-  | { type: "error"; error: { message: string; code?: string } };
+  | { type: "error"; error: { code: string; message: string } };
 
 export interface CreateRunInput {
   conversationId?: string;
@@ -414,7 +415,15 @@ function projectPath(projectId: string, suffix = ""): string {
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : undefined;
+  let data: unknown;
+  try {
+    data = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    if (!response.ok) {
+      throw new SabiApiError(response.status, text || response.statusText);
+    }
+    throw new SabiApiError(response.status, "Response body was not valid JSON");
+  }
   if (!response.ok) {
     const error = data as ErrorResponse | undefined;
     throw new SabiApiError(
@@ -425,6 +434,15 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
     );
   }
   return data as T;
+}
+
+function normalizeSendInput(input: SendConversationMessageInput): SendConversationMessageInput {
+  if (!input.promptVersionId) return input;
+  const { promptVersionId, promptVersion, ...rest } = input;
+  return {
+    ...rest,
+    promptVersion: promptVersion ?? promptVersionId,
+  };
 }
 
 async function* parseSse<T>(body: ReadableStream<Uint8Array>): AsyncIterable<T> {
@@ -700,7 +718,7 @@ function createProjectClient(http: HttpClient, projectId: string): SabiProjectCl
               projectId,
               `/conversations/${encodeURIComponent(conversationId)}/messages/send`
             ),
-            input,
+            normalizeSendInput(input),
             options
           ),
         stream: (conversationId, input, options) =>
@@ -710,7 +728,7 @@ function createProjectClient(http: HttpClient, projectId: string): SabiProjectCl
               projectId,
               `/conversations/${encodeURIComponent(conversationId)}/messages/stream`
             ),
-            input,
+            normalizeSendInput(input),
             options
           ),
       },
