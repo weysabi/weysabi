@@ -25,7 +25,7 @@ import { z } from "zod";
 import { ProviderClient } from "./providers";
 import { createWeysabiPrompts } from "./prompts";
 import type { Prompts, PromptDefinition } from "./prompts";
-import { parseModel, tryParseJSON } from "./utils";
+import { parseModel, tryParseJSON, errorMessage } from "./utils";
 import { createModuleLogger } from "./logger";
 import { estimateCost } from "./pricing";
 import type { Catalog } from "@joinremba/catalog";
@@ -154,7 +154,7 @@ export {
 export { estimateCost, addPricing } from "./pricing";
 export type { ModelPricing } from "./pricing";
 
-export { zodToJsonSchema } from "./utils";
+export { zodToJsonSchema, errorMessage } from "./utils";
 export type { Prompts, PromptDefinition } from "./prompts";
 export { Prompt } from "./prompts";
 
@@ -311,7 +311,7 @@ class WeysabiImpl implements Weysabi {
       }
       return response;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = err instanceof Error ? err : new Error(errorMessage(err));
       for (const plugin of this.plugins) {
         plugin.onError?.(error, { request: currentRequest });
       }
@@ -320,13 +320,16 @@ class WeysabiImpl implements Weysabi {
   }
 
   private async runComplete<T = unknown>(request: CompleteRequest): Promise<CompleteResponse<T>> {
+    const perRequestTelemetry = request.telemetry;
     const parsed = CompleteRequestSchema.parse(request);
     const messages = await this.injectRagContext(this.resolveMessages(parsed), parsed);
     const models: string[] = [parsed.model as string, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
     const schema = parsed.schema as z.ZodType<T> | undefined;
     const maxRetries = parsed.schemaMaxRetries ?? 1;
-    const hooks = this.opts.telemetry;
+    const hooks = perRequestTelemetry
+      ? { ...this.opts.telemetry, ...perRequestTelemetry }
+      : this.opts.telemetry;
 
     const rawTools = parsed.tools as ToolDefinition[] | undefined;
     const tools: ToolDefInfo[] | undefined = rawTools?.map((t) => ({
@@ -568,14 +571,14 @@ class WeysabiImpl implements Weysabi {
         } catch (err) {
           if (err instanceof SchemaValidationError) throw err;
           if (err instanceof MaxToolCallsExceededError) throw err;
-          const errorMessage = err instanceof Error ? err.message : String(err);
+          const msg = errorMessage(err);
           const modelIndex = models.indexOf(fullModel);
           const remainingFallbacks = models.slice(modelIndex + 1).length;
 
           this.log.warn({
             message: `Failing over from ${fullModel}`,
             model: fullModel,
-            error: errorMessage,
+            error: msg,
             remainingFallbacks,
           });
 
@@ -584,12 +587,12 @@ class WeysabiImpl implements Weysabi {
             hooks?.onFallback?.({
               from: fullModel,
               to: nextModel,
-              error: errorMessage,
+              error: msg,
               remainingFallbacks,
             });
           }
 
-          errors.push({ model: fullModel, error: errorMessage });
+          errors.push({ model: fullModel, error: msg });
           return null;
         }
       }
@@ -659,7 +662,7 @@ class WeysabiImpl implements Weysabi {
     try {
       yield* this.runStream(currentRequest);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = err instanceof Error ? err : new Error(errorMessage(err));
       for (const plugin of this.plugins) {
         plugin.onError?.(error, { request: currentRequest });
       }
@@ -672,6 +675,7 @@ class WeysabiImpl implements Weysabi {
   }
 
   private async *runStream(request: StreamRequest): AsyncIterable<StreamChunk> {
+    const perRequestTelemetry = request.telemetry;
     const parsed = StreamRequestSchema.parse(request);
     if (parsed.tools && parsed.tools.length > 0) {
       throw new WeysabiError(
@@ -681,7 +685,9 @@ class WeysabiImpl implements Weysabi {
     const messages = this.resolveMessages(parsed);
     const models: string[] = [parsed.model as string, ...(parsed.fallbacks ?? [])];
     const errors: { model: string; error: string }[] = [];
-    const hooks = this.opts.telemetry;
+    const hooks = perRequestTelemetry
+      ? { ...this.opts.telemetry, ...perRequestTelemetry }
+      : this.opts.telemetry;
 
     for (const fullModel of models) {
       const { provider, modelId } = parseModel(fullModel);
@@ -721,12 +727,12 @@ class WeysabiImpl implements Weysabi {
         }
         return;
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         if (emitted) {
           this.log.error({
             message: `Stream interrupted after output from ${fullModel}`,
             model: fullModel,
-            error: errorMessage,
+            error: msg,
           });
           throw new WeysabiError(
             `Stream interrupted after ${fullModel} emitted output; fallback was not attempted`,
@@ -737,7 +743,7 @@ class WeysabiImpl implements Weysabi {
         this.log.warn({
           message: `Stream failover from ${fullModel}`,
           model: fullModel,
-          error: errorMessage,
+          error: msg,
         });
 
         const modelIndex = models.indexOf(fullModel);
@@ -746,12 +752,12 @@ class WeysabiImpl implements Weysabi {
           hooks?.onFallback?.({
             from: fullModel,
             to: nextModel,
-            error: errorMessage,
+            error: msg,
             remainingFallbacks: models.slice(modelIndex + 1).length,
           });
         }
 
-        errors.push({ model: fullModel, error: errorMessage });
+        errors.push({ model: fullModel, error: msg });
       }
     }
 

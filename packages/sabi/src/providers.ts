@@ -9,7 +9,7 @@ import type {
 import { ProviderRequestError, CircuitBreakerOpenError } from "./errors";
 import { createModuleLogger } from "./logger";
 import type { Catalog } from "@joinremba/catalog";
-import { tryParseJSON } from "./utils";
+import { tryParseJSON, errorMessage } from "./utils";
 import type { ProviderHandler, ToolDefInfo } from "./providers/handler";
 import { openaiHandler } from "./providers/openai";
 import { anthropicHandler } from "./providers/anthropic";
@@ -142,7 +142,7 @@ export class ProviderClient {
         });
         return result;
       } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        lastError = err instanceof Error ? err : new Error(errorMessage(err));
         this.log.error({
           message: `Request failed for ${this.name}/${modelId}`,
           model: modelId,
@@ -264,12 +264,7 @@ export class ProviderClient {
           `Request timed out after ${timeout}ms`
         );
       }
-      throw new ProviderRequestError(
-        this.name,
-        modelId,
-        undefined,
-        err instanceof Error ? err.message : String(err)
-      );
+      throw new ProviderRequestError(this.name, modelId, undefined, errorMessage(err));
     } finally {
       clearTimeout(timeoutId);
     }
@@ -443,17 +438,12 @@ export class ProviderClient {
       hooks?.onFailure?.({
         model: `${this.name}/${modelId}`,
         provider: this.name,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
         attempt: 0,
         timestamp: Date.now(),
         willRetry: false,
       });
-      throw new ProviderRequestError(
-        this.name,
-        modelId,
-        undefined,
-        err instanceof Error ? err.message : String(err)
-      );
+      throw new ProviderRequestError(this.name, modelId, undefined, errorMessage(err));
     }
   }
 

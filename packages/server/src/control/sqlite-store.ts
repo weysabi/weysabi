@@ -42,6 +42,7 @@ import type {
   UpdateApiKeyInput,
   ApiKeyQuery,
 } from "./types";
+import type { CleanupOptions, CleanupResult } from "./store";
 import { fingerprintApiKey } from "../quota";
 import {
   ControlConflictError,
@@ -52,6 +53,10 @@ import {
 
 function now(): number {
   return Date.now();
+}
+
+function isUniqueConstraintError(err: unknown): err is Error {
+  return err instanceof Error && err.message.includes("UNIQUE");
 }
 
 // ─── Row types ──────────────────────────────────────────────
@@ -130,6 +135,7 @@ interface RunRow {
   resolved_model: string | null;
   provider: string | null;
   fallback_attempts: string;
+  document_ids: string;
   prompt_tokens: number | null;
   completion_tokens: number | null;
   total_tokens: number | null;
@@ -270,6 +276,7 @@ function rowToRun(row: RunRow): Run {
     resolvedModel: row.resolved_model ?? undefined,
     provider: row.provider ?? undefined,
     fallbackAttempts: JSON.parse(row.fallback_attempts),
+    documentIds: JSON.parse(row.document_ids),
     promptTokens: row.prompt_tokens ?? undefined,
     completionTokens: row.completion_tokens ?? undefined,
     totalTokens: row.total_tokens ?? undefined,
@@ -335,9 +342,7 @@ class SqliteProjectStore implements ProjectStore {
         [id, input.name, input.slug, metadata, settings, timestamp, timestamp]
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("UNIQUE")) {
-        throw new ProjectSlugConflictError(input.slug);
-      }
+      if (isUniqueConstraintError(err)) throw new ProjectSlugConflictError(input.slug);
       throw err;
     }
     return this.get(id) as Promise<Project>;
@@ -387,9 +392,7 @@ class SqliteProjectStore implements ProjectStore {
         [name, slug, metadata, settings, now(), projectId]
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("UNIQUE")) {
-        throw new ProjectSlugConflictError(slug);
-      }
+      if (isUniqueConstraintError(err)) throw new ProjectSlugConflictError(slug);
       throw err;
     }
     return this.get(projectId) as Promise<Project>;
@@ -431,7 +434,7 @@ class SqlitePromptStore implements PromptStore {
         ]
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("UNIQUE")) {
+      if (isUniqueConstraintError(err)) {
         throw new ControlConflictError(
           `Prompt slug "${input.slug}" is already taken in this project`,
           "PROMPT_SLUG_CONFLICT"
@@ -495,7 +498,7 @@ class SqlitePromptStore implements PromptStore {
         [name, slug, description ?? null, now(), promptId, projectId]
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("UNIQUE")) {
+      if (isUniqueConstraintError(err)) {
         throw new ControlConflictError(
           `Prompt slug "${slug}" is already taken in this project`,
           "PROMPT_SLUG_CONFLICT"
@@ -888,10 +891,11 @@ class SqliteRunStore implements RunStore {
     }
     const id = randomUUID();
     const fallbackAttempts = JSON.stringify(input.fallbackAttempts ?? []);
+    const documentIds = JSON.stringify(input.documentIds ?? []);
     const metadata = JSON.stringify(input.metadata ?? {});
     const timestamp = now();
     this.db.run(
-      "INSERT INTO runs (id, project_id, conversation_id, user_message_id, assistant_message_id, prompt_id, prompt_version_id, requested_model, resolved_model, provider, fallback_attempts, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, latency_ms, status, error_code, error_message, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO runs (id, project_id, conversation_id, user_message_id, assistant_message_id, prompt_id, prompt_version_id, requested_model, resolved_model, provider, fallback_attempts, document_ids, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, latency_ms, status, error_code, error_message, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         id,
         input.projectId,
@@ -904,6 +908,7 @@ class SqliteRunStore implements RunStore {
         input.resolvedModel ?? null,
         input.provider ?? null,
         fallbackAttempts,
+        documentIds,
         input.promptTokens ?? null,
         input.completionTokens ?? null,
         input.totalTokens ?? null,
@@ -943,6 +948,9 @@ class SqliteRunStore implements RunStore {
     const fallbackAttempts = input.fallbackAttempts
       ? JSON.stringify(input.fallbackAttempts)
       : JSON.stringify(existing.fallbackAttempts);
+    const documentIds = input.documentIds
+      ? JSON.stringify(input.documentIds)
+      : JSON.stringify(existing.documentIds);
     const promptTokens =
       input.promptTokens !== undefined ? input.promptTokens : existing.promptTokens;
     const completionTokens =
@@ -960,12 +968,13 @@ class SqliteRunStore implements RunStore {
       : JSON.stringify(existing.metadata);
     const completedAt = input.completedAt !== undefined ? input.completedAt : existing.completedAt;
     this.db.run(
-      "UPDATE runs SET assistant_message_id = ?, resolved_model = ?, provider = ?, fallback_attempts = ?, prompt_tokens = ?, completion_tokens = ?, total_tokens = ?, estimated_cost_usd = ?, latency_ms = ?, status = ?, error_code = ?, error_message = ?, metadata = ?, completed_at = ? WHERE id = ? AND project_id = ?",
+      "UPDATE runs SET assistant_message_id = ?, resolved_model = ?, provider = ?, fallback_attempts = ?, document_ids = ?, prompt_tokens = ?, completion_tokens = ?, total_tokens = ?, estimated_cost_usd = ?, latency_ms = ?, status = ?, error_code = ?, error_message = ?, metadata = ?, completed_at = ? WHERE id = ? AND project_id = ?",
       [
         assistantMessageId ?? null,
         resolvedModel ?? null,
         provider ?? null,
         fallbackAttempts,
+        documentIds,
         promptTokens ?? null,
         completionTokens ?? null,
         totalTokens ?? null,
@@ -1095,7 +1104,7 @@ class SqliteDocumentStore implements DocumentStore {
         ]
       );
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("UNIQUE")) {
+      if (isUniqueConstraintError(err)) {
         throw new ControlConflictError(
           `Document with content hash "${input.contentHash}" already exists in this project`,
           "DOCUMENT_CONTENT_CONFLICT"
@@ -1316,6 +1325,7 @@ const MIGRATIONS: Array<{ version: number; statements: string[] }> = [
         prompt_id TEXT, prompt_version_id TEXT,
         requested_model TEXT NOT NULL, resolved_model TEXT, provider TEXT,
         fallback_attempts TEXT NOT NULL DEFAULT '[]',
+        document_ids TEXT NOT NULL DEFAULT '[]',
         prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER,
         estimated_cost_usd REAL, latency_ms INTEGER,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -1414,6 +1424,66 @@ export function createSqliteControlPlaneStore(dbPath: string): ControlPlaneStore
     runs: new SqliteRunStore(db),
     documents: new SqliteDocumentStore(db),
     apiKeys: new SqliteApiKeyStore(db),
+    async cleanup(options?: CleanupOptions): Promise<CleanupResult> {
+      const projectIds: string[] = [];
+      if (options?.projectId) {
+        projectIds.push(options.projectId);
+      } else {
+        const rows = db.query<{ id: string }, []>("SELECT id FROM projects").all();
+        projectIds.push(...rows.map((r) => r.id));
+      }
+
+      let deletedConversations = 0;
+      let deletedRuns = 0;
+
+      for (const pid of projectIds) {
+        const project = db
+          .query<ProjectRow & { settings: string }, [string]>("SELECT * FROM projects WHERE id = ?")
+          .get(pid);
+        if (!project) continue;
+
+        const settings = JSON.parse(project.settings) as {
+          retentionDays?: number;
+        };
+        const retentionDays = settings.retentionDays;
+        if (!retentionDays) continue;
+
+        const cutoff = now() - retentionDays * 86400000;
+
+        if (options?.dryRun) {
+          const convCount = db
+            .query<{ count: number }, [string, number]>(
+              `SELECT COUNT(*) as count FROM conversations
+               WHERE project_id = ? AND (status IN ('archived', 'deleted') OR updated_at < ?)`
+            )
+            .get(pid, cutoff)!.count;
+          const runCount = db
+            .query<{ count: number }, [string, number]>(
+              `SELECT COUNT(*) as count FROM runs
+               WHERE project_id = ? AND created_at < ?`
+            )
+            .get(pid, cutoff)!.count;
+          deletedConversations += convCount;
+          deletedRuns += runCount;
+        } else {
+          const convDeletes = db.run(
+            `DELETE FROM conversations
+             WHERE project_id = ? AND (status IN ('archived', 'deleted') OR updated_at < ?)`,
+            [pid, cutoff]
+          );
+          deletedConversations += convDeletes.changes;
+
+          const runDeletes = db.run(
+            `DELETE FROM runs
+             WHERE project_id = ? AND created_at < ?`,
+            [pid, cutoff]
+          );
+          deletedRuns += runDeletes.changes;
+        }
+      }
+
+      return { deletedConversations, deletedRuns };
+    },
     async close() {
       if (closed) return;
       closed = true;
