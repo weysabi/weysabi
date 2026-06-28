@@ -1,9 +1,9 @@
-# @weysabi/sabi
+# weysabi
 
 **AI orchestration for fullstack devs.** Provider failover, structured output, streaming, RAG, guardrails, and prompt management — one dependency, zero markup.
 
 ```ts
-import { createWeysabi } from "@weysabi/sabi";
+import { createWeysabi } from "weysabi";
 import { z } from "zod";
 
 const sabi = createWeysabi({
@@ -26,7 +26,7 @@ console.log(res.parsed.total, res.latencyMs);
 ## Why Weysabi?
 
 - **Your keys, your providers.** No gateway, no token markup, no middleman.
-- **One dependency.** Not LangChain + provider SDKs + vector DB. Just `@weysabi/sabi`.
+- **One dependency.** Not LangChain + provider SDKs + vector DB. Just `weysabi`.
 - **Built-in everything.** Structured output, RAG, guardrails, prompts, streaming, caching — all ship in the box.
 - **Works offline-first.** SQLite for conversations and RAG. No cloud dependency.
 - **No lock-in.** Stop paying, the library still works. Your data stays with you.
@@ -62,7 +62,7 @@ console.log(res.parsed.total, res.latencyMs);
 ## Install
 
 ```bash
-bun add @weysabi/sabi
+bun add weysabi
 ```
 
 Requires Bun ≥ 1.3.
@@ -158,9 +158,9 @@ for await (const chunk of stream) {
 
 ```ts
 // Hono, Next.js, Elysia — any Web Fetch framework
-import { toResponse } from "@weysabi/sabi/hono";
-// import { toResponse } from "@weysabi/sabi/next";
-// import { toResponse } from "@weysabi/sabi/elysia";
+import { toResponse } from "weysabi/hono";
+// import { toResponse } from "weysabi/next";
+// import { toResponse } from "weysabi/elysia";
 
 app.post("/chat", async (c) => {
   const stream = sabi.stream({ ... });
@@ -168,14 +168,14 @@ app.post("/chat", async (c) => {
 });
 
 // Express
-import { pipe } from "@weysabi/sabi/express";
+import { pipe } from "weysabi/express";
 app.post("/chat", async (req, res) => {
   const stream = sabi.stream({ ... });
   await pipe(stream, res);
 });
 
 // Fastify
-import { pipe } from "@weysabi/sabi/fastify";
+import { pipe } from "weysabi/fastify";
 app.post("/chat", async (req, reply) => {
   const stream = sabi.stream({ ... });
   await pipe(stream, reply);
@@ -222,7 +222,7 @@ const messages = sabi.prompts.render("classify", {
 Built-in vector search without an external vector database. Ingest documents, auto-chunk, embed, and search.
 
 ```ts
-import { RagEngine } from "@weysabi/sabi/rag";
+import { RagEngine } from "weysabi/rag";
 
 const rag = new RagEngine({
   dbPath: ".sabi/knowledge.db",
@@ -245,7 +245,7 @@ console.log(results[0].content);
 Multi-project management:
 
 ```ts
-import { RagManager } from "@weysabi/sabi/rag";
+import { RagManager } from "weysabi/rag";
 
 const manager = new RagManager({
   basePath: ".sabi/rag",
@@ -276,7 +276,7 @@ const res = await sabi.complete({
 Guardrails can also be used standalone:
 
 ```ts
-import { guardrail } from "@weysabi/sabi/guardrails";
+import { guardrail } from "weysabi/guardrails";
 
 const result = await guardrail("pii", "My SSN is 123-45-6789");
 console.log(result.redacted); // "My SSN is [REDACTED]"
@@ -287,7 +287,7 @@ console.log(result.redacted); // "My SSN is [REDACTED]"
 Persistent chat history with automatic context management. SQLite by default, Postgres for production.
 
 ```ts
-import { ConversationMemory } from "@weysabi/sabi/chat";
+import { ConversationMemory } from "weysabi/chat";
 
 const memory = new ConversationMemory({
   dbPath: ".sabi/chat.db",
@@ -324,7 +324,7 @@ Postgres for production:
 
 ```ts
 import postgres from "postgres";
-import { ConversationMemory, PgSessionStore } from "@weysabi/sabi/chat";
+import { ConversationMemory, PgSessionStore } from "weysabi/chat";
 
 const sql = postgres("postgres://user:pass@host:5432/db");
 const memory = new ConversationMemory({
@@ -354,7 +354,7 @@ const res = await sabi.complete({
 ## Caching
 
 ```ts
-import { InMemoryCache, RedisCache } from "@weysabi/sabi/cache";
+import { InMemoryCache, RedisCache } from "weysabi/cache";
 
 const sabi = createWeysabi(providers, {
   cache: new InMemoryCache(60_000), // 60s TTL
@@ -385,7 +385,7 @@ sabi.use({
 ## OpenTelemetry
 
 ```ts
-import { createOtelPlugin } from "@weysabi/sabi/otel";
+import { createOtelPlugin } from "weysabi/otel";
 
 sabi.use(createOtelPlugin({ tracer: trace.getTracer("my-app") }));
 ```
@@ -393,7 +393,7 @@ sabi.use(createOtelPlugin({ tracer: trace.getTracer("my-app") }));
 ## Vercel AI SDK
 
 ```ts
-import { createWeysabiProvider } from "@weysabi/sabi/ai-sdk";
+import { createWeysabiProvider } from "weysabi/ai-sdk";
 
 const provider = createWeysabiProvider(sabi);
 const result = await generateText({
@@ -405,6 +405,9 @@ const result = await generateText({
 ## CLI
 
 ```bash
+# Scaffold a new project
+bunx create-weysabi-app my-app
+
 # Interactive project setup
 bun sabi init
 
@@ -431,7 +434,7 @@ bun sabi server --port 3000
 Or embed in your app:
 
 ```ts
-import { createServer } from "@weysabi/server";
+import { createServer } from "weysabi-server";
 
 const server = await createServer(sabi, {
   apiKey: "sk-my-key",
@@ -439,21 +442,21 @@ const server = await createServer(sabi, {
 });
 ```
 
-See [@weysabi/server](https://github.com/weysabi/sabi/tree/dev/packages/server) for full documentation.
+See [weysabi-server](https://github.com/weysabi/weysabi/tree/main/packages/server) for full documentation.
 
 ## Sub-path Exports
 
 ```ts
-import { createWeysabi } from "@weysabi/sabi";
-import { WeysabiError } from "@weysabi/sabi/errors";
-import { toResponse } from "@weysabi/sabi/sse";
-import { pipe } from "@weysabi/sabi/express";
-import { InMemoryCache } from "@weysabi/sabi/cache";
-import { createOtelPlugin } from "@weysabi/sabi/otel";
-import { createWeysabiProvider } from "@weysabi/sabi/ai-sdk";
-import { RagEngine, RagManager } from "@weysabi/sabi/rag";
-import { ConversationMemory } from "@weysabi/sabi/chat";
-import { PromptRegistry } from "@weysabi/sabi/prompts";
+import { createWeysabi } from "weysabi";
+import { WeysabiError } from "weysabi/errors";
+import { toResponse } from "weysabi/sse";
+import { pipe } from "weysabi/express";
+import { InMemoryCache } from "weysabi/cache";
+import { createOtelPlugin } from "weysabi/otel";
+import { createWeysabiProvider } from "weysabi/ai-sdk";
+import { RagEngine, RagManager } from "weysabi/rag";
+import { ConversationMemory } from "weysabi/chat";
+import { PromptRegistry } from "weysabi/prompts";
 ```
 
 ## License

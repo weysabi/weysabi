@@ -1,12 +1,12 @@
-# @weysabi/server
+# weysabi-server
 
-OpenAI-compatible HTTP server for `@weysabi/sabi`. It exposes OpenAI-style endpoints while routing requests through Weysabi's provider failover, circuit breaker, and retry logic.
+OpenAI-compatible HTTP server for `weysabi`. It exposes OpenAI-style endpoints while routing requests through Weysabi's provider failover, circuit breaker, and retry logic.
 
 ## Usage
 
 ```ts
-import { createWeysabi } from "@weysabi/sabi";
-import { createServer } from "@weysabi/server";
+import { createWeysabi } from "weysabi";
+import { createServer } from "weysabi-server";
 
 const sabi = createWeysabi({
   groq: { apiKey: process.env.SABI_GROQ_API_KEY },
@@ -53,7 +53,7 @@ sabi server --host 127.0.0.1 --port 3000
 | `SABI_GOOGLE_API_KEY`    | —         | Google Gemini provider key            |
 | `SABI_MISTRAL_API_KEY`   | —         | Mistral provider key                  |
 
-For multi-instance deployments, inject shared rate-limit and idempotency stores. Redis adapters are re-exported by `@weysabi/server`:
+For multi-instance deployments, inject shared rate-limit and idempotency stores. Redis adapters are re-exported by `weysabi-server`:
 
 ```ts
 import {
@@ -61,7 +61,7 @@ import {
   fromIORedis,
   RedisIdempotencyStore,
   RedisRateLimitStore,
-} from "@weysabi/server";
+} from "weysabi-server";
 
 const redisClient = fromIORedis(redis);
 const server = await createServer(sabi, {
@@ -76,7 +76,7 @@ The server package includes a project-scoped SQLite control-plane store for loca
 single-instance self-hosting:
 
 ```ts
-import { createSqliteControlPlaneStore } from "@weysabi/server";
+import { createSqliteControlPlaneStore } from "weysabi-server";
 
 const control = createSqliteControlPlaneStore(".sabi/control.db");
 const project = await control.projects.create({
