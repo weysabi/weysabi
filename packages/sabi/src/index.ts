@@ -474,8 +474,8 @@ class WeysabiImpl implements Weysabi {
       let didToolCall = false;
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const start = performance.now();
         try {
-          const start = performance.now();
           const result = await client.complete(modelId, modelMessages, {
             temperature: parsed.temperature,
             maxTokens: parsed.maxTokens,
@@ -571,6 +571,7 @@ class WeysabiImpl implements Weysabi {
         } catch (err) {
           if (err instanceof SchemaValidationError) throw err;
           if (err instanceof MaxToolCallsExceededError) throw err;
+          const latencyMs = performance.now() - start;
           const msg = errorMessage(err);
           const modelIndex = models.indexOf(fullModel);
           const remainingFallbacks = models.slice(modelIndex + 1).length;
@@ -588,6 +589,7 @@ class WeysabiImpl implements Weysabi {
               from: fullModel,
               to: nextModel,
               error: msg,
+              latencyMs,
               remainingFallbacks,
             });
           }

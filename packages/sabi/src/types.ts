@@ -245,6 +245,7 @@ export interface FallbackMetadata {
   from: string;
   to: string;
   error: string;
+  latencyMs?: number;
   remainingFallbacks: number;
 }
 
