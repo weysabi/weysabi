@@ -18,9 +18,9 @@ import type {
   ApiKeyStore,
 } from "./store";
 
-// Postgres tests require SABI_TEST_POSTGRES_URL to be set.
+// Postgres tests require WEYSABI_TEST_POSTGRES_URL to be set.
 // CI can skip these tests until a service container is configured.
-const PG_URL = process.env.SABI_TEST_POSTGRES_URL;
+const PG_URL = process.env.WEYSABI_TEST_POSTGRES_URL;
 
 function projectFactory() {
   const cp = createPostgresControlPlaneStore({

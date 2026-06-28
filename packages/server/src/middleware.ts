@@ -39,7 +39,7 @@ export function resolveApiKeys(apiKey?: string, apiKeys?: ApiKeyEntry[]): ApiKey
   if (apiKeys) {
     keys.push(...apiKeys);
   }
-  const envKeys = process.env.SABI_API_KEYS;
+  const envKeys = process.env.WEYSABI_API_KEYS;
   if (apiKey === undefined && apiKeys === undefined && envKeys) {
     keys.push(...parseApiKeys(envKeys));
   }

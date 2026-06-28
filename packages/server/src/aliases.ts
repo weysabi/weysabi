@@ -10,7 +10,7 @@ export type ModelAliasMap = Map<string, string>;
 export function buildModelAliases(config?: ModelAlias[], env?: string): ModelAliasMap {
   const map: ModelAliasMap = new Map();
 
-  const envStr = env ?? process.env.SABI_MODEL_ALIASES;
+  const envStr = env ?? process.env.WEYSABI_MODEL_ALIASES;
   if (envStr) {
     for (const pair of envStr.split(",")) {
       const eqIdx = pair.indexOf("=");
