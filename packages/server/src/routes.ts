@@ -57,6 +57,8 @@ export interface ServerOptions {
   idempotencyStore?: IdempotencyStore;
   closeSabiOnStop?: boolean;
   controlPlaneStore?: ControlPlaneStore;
+  controlPlane?: boolean;
+  storage?: "sqlite";
   ragConfig?: RagManagerConfig;
 }
 

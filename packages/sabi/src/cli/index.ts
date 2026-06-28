@@ -9,6 +9,7 @@ import { benchmarkCommand } from "./commands/benchmark";
 import { doctorCommand } from "./commands/doctor";
 import { serverCommand } from "./commands/server";
 import { createCommand } from "./commands/create";
+import { upgradeCommand } from "./commands/upgrade";
 import packageJson from "../../package.json" with { type: "json" };
 
 const version = packageJson.version;
@@ -36,6 +37,12 @@ program
   )
   .option("--no-install", "Skip dependency installation")
   .action(createCommand);
+
+program
+  .command("upgrade")
+  .description("Upgrade a generated project to the latest template")
+  .argument("[project-directory]", "Project directory (defaults to current directory)")
+  .action(upgradeCommand);
 
 program
   .command("config")

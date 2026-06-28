@@ -252,7 +252,7 @@ describe("create command", () => {
 
       const server = readFileSync(resolve(projectDir, "src/index.ts"), "utf-8");
       expect(server).toContain("createServer");
-      expect(server).toContain("createSqliteControlPlaneStore");
+      expect(server).toContain("controlPlane: true");
       expect(server).toContain("SABI_ADMIN_API_KEY");
 
       const env = readFileSync(resolve(projectDir, ".env.example"), "utf-8");

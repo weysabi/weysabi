@@ -1,5 +1,8 @@
+import { mkdirSync } from "fs";
+import { dirname, resolve } from "path";
 import type { Weysabi } from "@weysabi/sabi";
 import { createRouter, type ServerOptions } from "./routes";
+import { createSqliteControlPlaneStore } from "./control";
 
 export type { ServerOptions };
 
@@ -11,6 +14,19 @@ function envInteger(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer`);
   }
   return value;
+}
+
+function resolveControlPlaneStore(options: ServerOptions) {
+  const explicit = options.controlPlaneStore;
+  if (explicit) return explicit;
+  if (options.controlPlane) {
+    const dbPath = options.storage === "sqlite"
+      ? resolve(process.env.SABI_CONTROL_DB ?? ".sabi/control.db")
+      : resolve(".sabi/control.db");
+    mkdirSync(dirname(dbPath), { recursive: true });
+    return createSqliteControlPlaneStore(dbPath);
+  }
+  return undefined;
 }
 
 export async function createServer(
@@ -43,6 +59,8 @@ export async function createServer(
       .filter(Boolean);
   const remoteAddresses = new WeakMap<Request, string>();
 
+  const ctrlStore = resolveControlPlaneStore(options);
+
   const router = await createRouter(sabi, {
     port,
     apiKey,
@@ -60,7 +78,8 @@ export async function createServer(
     trustedProxies,
     rateLimitStore: options.rateLimitStore,
     idempotencyStore: options.idempotencyStore,
-    controlPlaneStore: options.controlPlaneStore,
+    controlPlaneStore: ctrlStore,
+    ragConfig: options.ragConfig,
     getRemoteAddress: (request) => remoteAddresses.get(request),
   });
 

@@ -21,12 +21,27 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@weysabi/sabi": ["packages/sabi/src"],
-      "@weysabi/sabi/*": ["packages/sabi/src/*"],
-      "@weysabi/server": ["packages/server/src"],
+      "@weysabi/sabi": ["packages/sabi/src/index.ts"],
+      "@weysabi/sabi/errors": ["packages/sabi/src/errors.ts"],
+      "@weysabi/sabi/sse": ["packages/sabi/src/sse.ts"],
+      "@weysabi/sabi/hono": ["packages/sabi/src/hono.ts"],
+      "@weysabi/sabi/next": ["packages/sabi/src/next.ts"],
+      "@weysabi/sabi/express": ["packages/sabi/src/express.ts"],
+      "@weysabi/sabi/fastify": ["packages/sabi/src/fastify.ts"],
+      "@weysabi/sabi/elysia": ["packages/sabi/src/elysia.ts"],
+      "@weysabi/sabi/ai-sdk": ["packages/sabi/src/ai-sdk.ts"],
+      "@weysabi/sabi/otel": ["packages/sabi/src/otel.ts"],
+      "@weysabi/sabi/cache": ["packages/sabi/src/cache.ts"],
+      "@weysabi/sabi/client": ["packages/sabi/src/client.ts"],
+      "@weysabi/sabi/rag": ["packages/sabi/src/rag/index.ts"],
+      "@weysabi/sabi/chat": ["packages/sabi/src/chat/index.ts"],
+      "@weysabi/sabi/guardrails": ["packages/sabi/src/guardrails/index.ts"],
+      "@weysabi/sabi/prompts": ["packages/sabi/src/prompts/index.ts"],
+      "@weysabi/sabi/cli": ["packages/sabi/src/cli/public.ts"],
+      "@weysabi/server": ["packages/server/src/index.ts"],
       "@weysabi/server/*": ["packages/server/src/*"]
     }
   },
-  "include": ["packages/*/src", "packages/server/drizzle.config.ts"],
+  "include": ["packages/*/src", "packages/server/drizzle.config.ts", "packages/create-sabi-app/src"],
   "exclude": ["packages/webapp/src"]
 }
