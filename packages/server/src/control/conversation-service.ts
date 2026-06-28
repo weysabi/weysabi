@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { AllModelsFailedError } from "@weysabi/sabi";
 import type { CompleteRequest, Message, StreamRequest, Weysabi } from "@weysabi/sabi";
 import { assembleConversationContext } from "./context";
-import { ControlError } from "./errors";
+import { ControlError, errorMessage } from "./errors";
 import type { ControlPlaneStore } from "./store";
 import type { QuotaReservation, TokenQuotaConfig, TokenQuotaStore } from "../quota";
 import type { RagService } from "./rag-service";
@@ -61,7 +62,7 @@ function modelToString(model: string | string[]): string {
 }
 
 function publicErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 function estimateContextTokens(context: Message[], maxTokens?: number): number {
@@ -271,6 +272,7 @@ export function createConversationService(
               model: metadata.from,
               provider: metadata.from.split("/")[0] ?? "unknown",
               error: metadata.error,
+              latencyMs: metadata.latencyMs,
             });
           },
         },
@@ -338,7 +340,21 @@ export function createConversationService(
         if (quotaReservation && qt) {
           await qt.store.release(quotaReservation.id);
         }
+        if (error instanceof AllModelsFailedError) {
+          const recorded = new Set(fallbackAttempts.map((a) => a.model));
+          for (const e of error.errors) {
+            if (!recorded.has(e.model)) {
+              fallbackAttempts.push({
+                model: e.model,
+                provider: e.model.split("/")[0] ?? "unknown",
+                error: e.error,
+              });
+              recorded.add(e.model);
+            }
+          }
+        }
         await store.runs.update(parsed.projectId, run.id, {
+          fallbackAttempts,
           status: "failed",
           errorCode: "RUN_FAILED",
           errorMessage: publicErrorMessage(error),
@@ -372,6 +388,7 @@ export function createConversationService(
               model: metadata.from,
               provider: metadata.from.split("/")[0] ?? "unknown",
               error: metadata.error,
+              latencyMs: metadata.latencyMs,
             });
           },
         },
@@ -392,6 +409,9 @@ export function createConversationService(
         quotaReservation = result.reservation;
       }
 
+      const modelsChain: string[] = Array.isArray(model)
+        ? model
+        : [model, ...(parsed.fallbacks ?? version?.fallbacks ?? [])];
       let content = "";
       let usage: ConversationUsage | undefined;
       const startedAt = Date.now();
@@ -413,6 +433,14 @@ export function createConversationService(
             usage?.totalTokens ?? quotaReservation.reservedTokens
           );
         }
+        const failedModels = new Set(fallbackAttempts.map((a) => a.model));
+        const resolvedModel =
+          modelsChain.find((m) => !failedModels.has(m)) ?? modelsChain[modelsChain.length - 1]!;
+        fallbackAttempts.push({
+          model: resolvedModel,
+          provider: resolvedModel.split("/")[0] ?? "unknown",
+          latencyMs: Date.now() - startedAt,
+        });
         const assistantMessage = await store.conversations.appendMessage({
           projectId: parsed.projectId,
           conversationId: parsed.conversationId,
@@ -436,6 +464,19 @@ export function createConversationService(
       } catch (error) {
         if (quotaReservation && qt) {
           await qt.store.release(quotaReservation.id);
+        }
+        if (error instanceof AllModelsFailedError) {
+          const recorded = new Set(fallbackAttempts.map((a) => a.model));
+          for (const e of error.errors) {
+            if (!recorded.has(e.model)) {
+              fallbackAttempts.push({
+                model: e.model,
+                provider: e.model.split("/")[0] ?? "unknown",
+                error: e.error,
+              });
+              recorded.add(e.model);
+            }
+          }
         }
         const message = publicErrorMessage(error);
         if (content) {
@@ -463,6 +504,7 @@ export function createConversationService(
           yield { type: "message.interrupted", message: assistantMessage, run: interruptedRun };
         } else {
           await store.runs.update(parsed.projectId, run.id, {
+            fallbackAttempts,
             latencyMs: Date.now() - startedAt,
             status: "failed",
             errorCode: "RUN_FAILED",
