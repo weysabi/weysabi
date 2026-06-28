@@ -9,16 +9,10 @@ import { registerConversationRoutes } from "./routes/conversations";
 import { registerDocumentRoutes } from "./routes/documents";
 import { registerProjectRoutes } from "./routes/projects";
 import { registerPromptRoutes } from "./routes/prompts";
-import { registerRagRoutes } from "./routes/rag";
 import { registerRunRoutes } from "./routes/runs";
-import type { TokenQuotaConfig, TokenQuotaStore } from "../quota";
-import type { RagService } from "./rag-service";
 
 export interface RegisterControlRoutesOptions {
   idempotency?: IdempotencyInstance;
-  quotaStore?: TokenQuotaStore;
-  quotaConfig?: TokenQuotaConfig;
-  ragService?: RagService;
 }
 
 export function registerControlRoutes(
@@ -34,9 +28,6 @@ export function registerControlRoutes(
     projects: createProjectService(store.projects),
     prompts: createPromptService(store.prompts),
     idempotency: options.idempotency,
-    quotaStore: options.quotaStore,
-    quotaConfig: options.quotaConfig,
-    ragService: options.ragService,
   };
 
   registerProjectRoutes(context);
@@ -45,5 +36,4 @@ export function registerControlRoutes(
   registerRunRoutes(context);
   registerDocumentRoutes(context);
   registerApiKeyRoutes(context);
-  registerRagRoutes(context);
 }

@@ -112,10 +112,6 @@ const CODE_STATUS_MAP: Record<number, string> = {
   503: "SERVICE_UNAVAILABLE",
 };
 
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 export function inferCode(status: number): string {
   return CODE_STATUS_MAP[status] ?? "UNKNOWN_ERROR";
 }

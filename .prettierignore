@@ -9,4 +9,3 @@ bun.lock
 .source
 out
 next-env.d.ts
-drizzle

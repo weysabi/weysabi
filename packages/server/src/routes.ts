@@ -17,7 +17,6 @@ import {
   PayloadTooLargeError,
   ServerError,
   QuotaExceededError,
-  errorMessage,
 } from "./errors";
 import { buildModelAliases, resolveAlias, getAliasesList } from "./aliases";
 import type { ModelAlias, ModelAliasMap } from "./aliases";
@@ -27,11 +26,7 @@ import { InMemoryTokenQuotaStore, fingerprintRequestApiKey } from "./quota";
 import type { QuotaReservation, TokenQuotaConfig, TokenQuotaStore } from "./quota";
 import { InMemoryUsageLedger } from "./ledger";
 import type { UsageLedger } from "./ledger";
-import type { Hono } from "hono";
-import type { Context } from "hono";
 import { registerControlRoutes } from "./control/control-routes";
-import { createRagService } from "./control/rag-service";
-import type { RagManagerConfig } from "./control/rag-service";
 import { createControlPlaneAuth } from "./control/auth";
 import { ControlError } from "./control/errors";
 import type { ControlPlaneStore } from "./control/store";
@@ -57,10 +52,10 @@ export interface ServerOptions {
   idempotencyStore?: IdempotencyStore;
   closeSabiOnStop?: boolean;
   controlPlaneStore?: ControlPlaneStore;
-  ragConfig?: RagManagerConfig;
 }
 
-type HonoApp = Hono;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HonoApp = any;
 
 function sseErrorEvent(message: string): string {
   return `data: ${JSON.stringify({ error: { message, type: "sabi_error" } })}\n\n`;
@@ -101,14 +96,14 @@ export async function createRouter(
   fetch: (req: Request) => Response | Promise<Response>;
   close: () => void;
 }> {
-  let HonoCtor: new () => HonoApp;
+  let Hono: new () => HonoApp;
   try {
     const mod = await import("hono");
-    HonoCtor = mod.Hono;
+    Hono = mod.Hono;
   } catch {
     throw new Error("Hono is required for Weysabi Server. Install it: bun add hono");
   }
-  const app = new HonoCtor();
+  const app = new Hono();
   const maxBodyBytes = options.maxBodyBytes ?? 1024 * 1024;
   const rateLimitStore = options.rateLimitStore ?? new InMemoryRateLimitStore();
   const idempotencyStore = options.idempotencyStore ?? new InMemoryStore();
@@ -204,7 +199,7 @@ export async function createRouter(
 
   const idemp = createIdempotency(options.idempotencyTtl ?? 86400, idempotencyStore);
 
-  app.use("/*", async (c: Context, next: () => Promise<void>) => {
+  app.use("/*", async (c: HonoApp, next: HonoApp) => {
     const start = Date.now();
     await next();
     log.info("request", {
@@ -215,7 +210,7 @@ export async function createRouter(
     });
   });
 
-  app.get("/v1/models", (c: Context) => {
+  app.get("/v1/models", (c: HonoApp) => {
     const providers = options.providers ?? [];
     const data: Record<string, unknown>[] =
       providers.length > 0
@@ -247,12 +242,12 @@ export async function createRouter(
     return ok(c, { object: "list", data });
   });
 
-  app.get("/health", (c: Context) => {
+  app.get("/health", (c: HonoApp) => {
     return ok(c, { status: "ok", timestamp: Date.now() });
   });
 
   if (options.adminApiKey) {
-    app.get("/v1/admin/stats", async (c: Context) => {
+    app.get("/v1/admin/stats", async (c: HonoApp) => {
       const allStats = await usageLedger.stats();
 
       return ok(c, {
@@ -263,7 +258,7 @@ export async function createRouter(
       });
     });
 
-    app.get("/v1/admin/usage", async (c: Context) => {
+    app.get("/v1/admin/usage", async (c: HonoApp) => {
       const query = AdminUsageQuerySchema.parse({
         key: c.req.query("key") || undefined,
         limit: c.req.query("limit") || undefined,
@@ -279,19 +274,11 @@ export async function createRouter(
     });
   }
 
-  let ragService: ReturnType<typeof createRagService> | undefined;
   if (options.controlPlaneStore && options.adminApiKey) {
-    const hasQuotaLimits =
-      quotaConfig?.maxTokensPerMin !== undefined || quotaConfig?.maxTokensPerDay !== undefined;
-    ragService = options.ragConfig ? createRagService(options.ragConfig) : undefined;
-    registerControlRoutes(app, sabi, options.controlPlaneStore, {
-      idempotency: idemp,
-      ...(options.quotaStore || hasQuotaLimits ? { quotaStore, quotaConfig } : {}),
-      ragService,
-    });
+    registerControlRoutes(app, sabi, options.controlPlaneStore, { idempotency: idemp });
   }
 
-  app.post("/v1/chat/completions", async (c: Context) => {
+  app.post("/v1/chat/completions", async (c: HonoApp) => {
     const body = (await c.req.json()) as Record<string, unknown>;
     const stream = body.stream === true;
     const rawIdempKey = c.req.header("Idempotency-Key");
@@ -388,10 +375,10 @@ export async function createRouter(
               log.info("stream complete", { model, latencyMs: Date.now() - start });
             } catch (err) {
               await releaseQuota();
-              const msg = errorMessage(err);
-              log.error("stream error", { model, error: msg });
+              const message = err instanceof Error ? err.message : String(err);
+              log.error("stream error", { model, error: message });
               if (c.req.raw.signal.aborted) return;
-              controller.enqueue(new TextEncoder().encode(sseErrorEvent(msg)));
+              controller.enqueue(new TextEncoder().encode(sseErrorEvent(message)));
               controller.close();
             }
           },
@@ -453,7 +440,7 @@ export async function createRouter(
     return ok(c, translated);
   });
 
-  app.onError((err: Error, c: Context) => {
+  app.onError((err: Error, c: HonoApp) => {
     if (err instanceof ServerError) {
       log.warn("server error", {
         code: err.code,
@@ -495,7 +482,7 @@ export async function createRouter(
     return fail(c, 500, "Internal server error", "SERVER_ERROR");
   });
 
-  app.notFound((c: Context) => {
+  app.notFound((c: HonoApp) => {
     const path = `${c.req.method} ${c.req.path}`;
     log.warn("not found", { path });
     return fail(c, 404, `Route ${path} not found`, "NOT_FOUND");
@@ -504,7 +491,6 @@ export async function createRouter(
   return {
     fetch: app.fetch as (req: Request) => Response | Promise<Response>,
     close: () => {
-      ragService?.close();
       if (!options.rateLimitStore && "dispose" in rateLimitStore) {
         (rateLimitStore as RateLimitStore & { dispose: () => void }).dispose();
       }

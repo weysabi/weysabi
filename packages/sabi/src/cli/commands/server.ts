@@ -1,4 +1,3 @@
-import { errorMessage } from "../../index";
 import { resolveProviders } from "../utils";
 import type { Weysabi } from "../../weysabi";
 
@@ -44,7 +43,8 @@ export async function serverCommand(options: { port?: string; host?: string }): 
     console.log("  GET  /v1/models           — List models");
     console.log("  GET  /health              — Health check");
   } catch (err) {
-    console.error(`Failed to start server: ${errorMessage(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to start server: ${message}`);
     process.exit(1);
   }
 }

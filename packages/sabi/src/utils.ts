@@ -21,10 +21,6 @@ export function generateId(length: number = 16): string {
   return result;
 }
 
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 export function tryParseJSON<T = Record<string, unknown>>(text: string): T | null {
   try {
     return JSON.parse(text) as T;

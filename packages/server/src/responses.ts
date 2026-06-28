@@ -1,16 +1,13 @@
-import type { Context } from "hono";
 import type { ServerError } from "./errors";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HonoApp = any;
 
-function json<T>(c: Context, data: T, init?: number | ResponseInit) {
-  return c.json(data, init as Parameters<typeof c.json>[1]);
-}
-
-export function ok<T>(c: Context, data: T, status: number = 200) {
-  return json(c, data, status);
+export function ok<T>(c: HonoApp, data: T, status = 200) {
+  return c.json(data, status);
 }
 
 export function fail(
-  c: Context,
+  c: HonoApp,
   status: number,
   message: string,
   code?: string,
@@ -24,10 +21,10 @@ export function fail(
       ...(details !== undefined && { details }),
     },
   };
-  return json(c, body, { status, headers: headers ?? {} });
+  return c.json(body, status, headers ?? {});
 }
 
-export function fromServerError(c: Context, err: ServerError) {
+export function fromServerError(c: HonoApp, err: ServerError) {
   return fail(c, err.statusCode, err.message, err.code, undefined, err.headers);
 }
 

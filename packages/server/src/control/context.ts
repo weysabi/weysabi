@@ -1,6 +1,5 @@
 import type { Message } from "@weysabi/sabi";
 import type { Conversation, ConversationMessage, Project, PromptVersion } from "./types";
-import { renderMessages } from "./templates";
 
 export interface ContextAssemblyInput {
   project: Project;
@@ -13,9 +12,16 @@ export interface ContextAssemblyInput {
 }
 
 const DEFAULT_MAX_CONTEXT_TOKENS = 8000;
+const TEMPLATE_REGEX = /\{(\w+)\}/g;
 
 function estimateTokens(content: string): number {
   return Math.max(1, Math.ceil(content.length / 4));
+}
+
+function renderTemplate(content: string, values: Record<string, unknown>): string {
+  return content.replace(TEMPLATE_REGEX, (match, key: string) =>
+    key in values ? String(values[key]) : match
+  );
 }
 
 function toMessage(message: ConversationMessage): Message {
@@ -35,17 +41,10 @@ export function assembleConversationContext(input: ContextAssemblyInput): Messag
   const assembled: Message[] = [];
   let remainingTokens = maxContextTokens;
 
-  if (input.promptVersion?.messages) {
-    const rendered = renderMessages(
-      input.promptVersion.messages,
-      promptInputs,
-      `version:${input.promptVersion.id}`
-    );
-    for (const message of rendered) {
-      assembled.push(message);
-      const content = typeof message.content === "string" ? message.content : "";
-      remainingTokens -= estimateTokens(content);
-    }
+  for (const promptMessage of input.promptVersion?.messages ?? []) {
+    const content = renderTemplate(promptMessage.content, promptInputs);
+    assembled.push({ ...promptMessage, content });
+    remainingTokens -= estimateTokens(content);
   }
 
   if (input.conversation.summary) {

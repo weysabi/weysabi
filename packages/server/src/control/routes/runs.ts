@@ -4,13 +4,13 @@ import {
   RunStatsQuerySchema,
   UpdateRunInputSchema,
 } from "../types";
-import type { ControlRouteContext } from "./common";
+import type { ControlRouteContext, HonoApp } from "./common";
 import { notFound, parseJsonBody, requireProject } from "./common";
 
 export function registerRunRoutes({ app, projects, store }: ControlRouteContext): void {
   const runs = store.runs;
 
-  app.post("/v1/projects/:projectId/runs", async (c) => {
+  app.post("/v1/projects/:projectId/runs", async (c: HonoApp) => {
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const body = await parseJsonBody(c);
@@ -18,7 +18,7 @@ export function registerRunRoutes({ app, projects, store }: ControlRouteContext)
     return c.json(run, 201);
   });
 
-  app.get("/v1/projects/:projectId/runs", async (c) => {
+  app.get("/v1/projects/:projectId/runs", async (c: HonoApp) => {
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = RunQuerySchema.parse({
@@ -31,7 +31,7 @@ export function registerRunRoutes({ app, projects, store }: ControlRouteContext)
     return c.json(await runs.list(projectId, query));
   });
 
-  app.get("/v1/projects/:projectId/runs/stats", async (c) => {
+  app.get("/v1/projects/:projectId/runs/stats", async (c: HonoApp) => {
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = RunStatsQuerySchema.parse({
@@ -41,14 +41,14 @@ export function registerRunRoutes({ app, projects, store }: ControlRouteContext)
     return c.json(await runs.stats(projectId, query));
   });
 
-  app.get("/v1/projects/:projectId/runs/:runId", async (c) => {
+  app.get("/v1/projects/:projectId/runs/:runId", async (c: HonoApp) => {
     const { projectId, runId } = c.req.param();
     const run = await runs.get(projectId, runId);
     if (!run) notFound("Run", runId, "RUN_NOT_FOUND");
     return c.json(run);
   });
 
-  app.patch("/v1/projects/:projectId/runs/:runId", async (c) => {
+  app.patch("/v1/projects/:projectId/runs/:runId", async (c: HonoApp) => {
     const { projectId, runId } = c.req.param();
     const body = UpdateRunInputSchema.parse(await parseJsonBody(c));
     return c.json(await runs.update(projectId, runId, body));

@@ -3,14 +3,14 @@ import type { ApiKeyEntry } from "@joinremba/gate/api-keys";
 import { AuthError, InsufficientPermissionsError } from "../errors";
 import type { ControlPlaneStore } from "./store";
 import type { ProjectScope } from "./types";
-import type { HonoContext } from "./routes/common";
+import type { HonoApp } from "./routes/common";
 
 interface ScopeRequirement {
   scopes: ProjectScope[];
   match: "any" | "all";
 }
 
-function bearerToken(c: HonoContext): string | null {
+function bearerToken(c: HonoApp): string | null {
   const authorization = c.req.header("Authorization");
   const match =
     typeof authorization === "string" ? /^Bearer\s+(.+)$/iu.exec(authorization.trim()) : null;
@@ -28,7 +28,7 @@ function readRequirement(method: string, path: string): ScopeRequirement | null 
   }
 
   if (path.endsWith("/messages/send") || path.endsWith("/messages/stream")) {
-    return { scopes: ["chat:write", "conversations:write"], match: "all" };
+    return { scopes: ["chat:write", "conversations:write"], match: "any" };
   }
 
   if (path.includes("/conversations") || /\/v1\/projects\/[^/]+\/messages\/[^/]+$/u.test(path)) {
@@ -39,7 +39,7 @@ function readRequirement(method: string, path: string): ScopeRequirement | null 
   }
 
   if (path.endsWith("/execute")) {
-    return { scopes: ["chat:write", "prompts:read"], match: "all" };
+    return { scopes: ["chat:write", "prompts:read"], match: "any" };
   }
 
   if (path.includes("/prompts")) {
@@ -84,7 +84,7 @@ export function createControlPlaneAuth(
   ]).authenticate();
   const authenticateNonAdmin = createApiKeyValidator(nonAdminKeys).authenticate();
 
-  return async (c: HonoContext, next: () => Promise<void>) => {
+  return async (c: HonoApp, next: () => Promise<void>) => {
     const adminResult = await authenticateAdmin(c.req.raw);
     if (adminResult.authenticated) {
       await next();

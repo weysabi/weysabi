@@ -1,5 +1,4 @@
 export { createSqliteControlPlaneStore } from "./sqlite-store";
-export { createPostgresControlPlaneStore } from "./pg-store";
 export { createProjectService } from "./service";
 export { createPromptService } from "./prompt-service";
 export { assembleConversationContext } from "./context";
@@ -13,8 +12,6 @@ export type { RegisterControlRoutesOptions } from "./control-routes";
 
 export type {
   ApiKeyStore,
-  CleanupOptions,
-  CleanupResult,
   ControlPlaneStore,
   ConversationStore,
   DocumentStore,

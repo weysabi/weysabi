@@ -1,6 +1,6 @@
 import { resolve, basename } from "path";
 import { existsSync, statSync } from "fs";
-import { generateId, errorMessage } from "../utils";
+import { generateId } from "../utils";
 import { RagStore } from "./store";
 import { splitText } from "./chunker";
 import { embedText, embedBatch } from "./embedder";
@@ -277,7 +277,7 @@ export class RagEngine {
         yield {
           type: "error",
           filePath: file.path,
-          error: errorMessage(err),
+          error: err instanceof Error ? err.message : String(err),
           current,
           total,
         };

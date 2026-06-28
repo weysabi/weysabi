@@ -27,6 +27,6 @@
       "@weysabi/server/*": ["packages/server/src/*"]
     }
   },
-  "include": ["packages/*/src", "packages/server/drizzle.config.ts"],
+  "include": ["packages/*/src"],
   "exclude": ["packages/webapp/src"]
 }

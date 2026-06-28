@@ -109,35 +109,6 @@ export function providerLabel(name: string): string {
   return labels[name.toLowerCase()] ?? name;
 }
 
-import { errorMessage } from "../index";
-
-export function resolveProvidersWithGuard(options: { noConfig?: boolean }): {
-  providers: Record<string, ProviderConfig>;
-  defaultModel?: string;
-} {
-  let providers: Record<string, ProviderConfig> = {};
-  let defaultModel: string | undefined;
-
-  if (!options.noConfig) {
-    const loaded = loadConfig();
-    if (loaded) {
-      providers = resolveProviders(loaded.config.providers);
-      defaultModel = loaded.config.defaultModel;
-    }
-  }
-
-  if (Object.keys(providers).length === 0 && !options.noConfig) {
-    providers = resolveProviders();
-  }
-
-  if (Object.keys(providers).length === 0) {
-    console.error("No providers configured. Set API_KEY env vars or run `sabi init`.");
-    process.exit(1);
-  }
-
-  return { providers, defaultModel };
-}
-
 export async function testProvider(
   name: string,
   config: ProviderConfig,
@@ -181,7 +152,7 @@ export async function testProvider(
     return {
       ok: false,
       latencyMs: Math.round(performance.now() - start),
-      error: errorMessage(err),
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }

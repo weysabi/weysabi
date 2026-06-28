@@ -144,9 +144,7 @@ export const CompleteRequestSchema = z.object({
   maxToolCalls: z.number().int().min(1).max(100).optional(),
   rag: z.boolean().optional(),
 });
-export type CompleteRequest = z.input<typeof CompleteRequestSchema> & {
-  telemetry?: TelemetryHooks;
-};
+export type CompleteRequest = z.input<typeof CompleteRequestSchema>;
 
 export interface CompleteResponse<T = unknown> {
   content: string;
@@ -187,9 +185,7 @@ export const StreamRequestSchema = z.object({
   tools: z.array(ToolDefinitionSchema).optional(),
   signal: z.custom<AbortSignal>((value) => value instanceof AbortSignal).optional(),
 });
-export type StreamRequest = z.input<typeof StreamRequestSchema> & {
-  telemetry?: TelemetryHooks;
-};
+export type StreamRequest = z.input<typeof StreamRequestSchema>;
 
 export interface StreamChunk {
   content: string;
@@ -245,7 +241,6 @@ export interface FallbackMetadata {
   from: string;
   to: string;
   error: string;
-  latencyMs?: number;
   remainingFallbacks: number;
 }
 

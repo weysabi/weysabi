@@ -1,14 +1,21 @@
 #!/usr/bin/env bun
 import { parseApiKeys } from "./middleware";
 import { createModuleLogger } from "./logger";
-import {
-  resolveProvidersFromEnv,
-  requireProviders,
-  registerShutdownHandlers,
-  providerNames,
-} from "./bootstrap";
 
 const log = createModuleLogger("cli");
+
+const PROVIDER_ENV_VARS: Record<string, string> = {
+  openai: "SABI_OPENAI_API_KEY",
+  groq: "SABI_GROQ_API_KEY",
+  anthropic: "SABI_ANTHROPIC_API_KEY",
+  google: "SABI_GOOGLE_API_KEY",
+  mistral: "SABI_MISTRAL_API_KEY",
+  deepseek: "SABI_DEEPSEEK_API_KEY",
+  together: "SABI_TOGETHER_API_KEY",
+  nvidia: "SABI_NVIDIA_API_KEY",
+  openrouter: "SABI_OPENROUTER_API_KEY",
+  ollama: "SABI_OLLAMA_API_KEY",
+};
 
 const args = process.argv.slice(2);
 const portIdx = args.indexOf("--port") !== -1 ? args.indexOf("--port") : args.indexOf("-p");
@@ -33,9 +40,9 @@ ENVIRONMENT
   SABI_GROQ_API_KEY         Groq API key
   SABI_ANTHROPIC_API_KEY    Anthropic API key
   SABI_GOOGLE_API_KEY       Google AI API key
-  SABI_MISTRAL_API_KEY      Mistral AI API key
+  SABI_MISTRAL_API_KEY      Mistral API key
   SABI_DEEPSEEK_API_KEY     DeepSeek API key
-  SABI_TOGETHER_API_KEY     Together AI API key
+  SABI_TOGETHER_API_KEY     Together API key
   SABI_NVIDIA_API_KEY       NVIDIA API key
   SABI_OPENROUTER_API_KEY   OpenRouter API key
   SABI_OLLAMA_API_KEY       Ollama API key
@@ -51,8 +58,19 @@ ENVIRONMENT
   process.exit(0);
 }
 
-const providers = resolveProvidersFromEnv();
-requireProviders(providers);
+const providers: Record<string, { apiKey: string }> = {};
+
+for (const [name, envVar] of Object.entries(PROVIDER_ENV_VARS)) {
+  const val = process.env[envVar];
+  if (val) {
+    providers[name] = { apiKey: val };
+  }
+}
+
+if (Object.keys(providers).length === 0) {
+  log.error("No providers configured. Set at least one SABI_*_API_KEY env var.");
+  process.exit(1);
+}
 
 const { createWeysabi } = await import("@weysabi/sabi");
 const sabi = createWeysabi(providers);
@@ -64,7 +82,7 @@ const server = await createServer(sabi, {
   apiKey: process.env.SABI_API_KEY || undefined,
   adminApiKey: process.env.SABI_ADMIN_API_KEY || undefined,
   apiKeys: process.env.SABI_API_KEYS ? parseApiKeys(process.env.SABI_API_KEYS) : undefined,
-  providers: providerNames(providers),
+  providers: Object.keys(providers),
 });
 
 const displayHost =
@@ -72,8 +90,18 @@ const displayHost =
 
 log.info("Weysabi Server ready", {
   url: `http://${displayHost}:${server.port}`,
-  providers: providerNames(providers),
+  providers: Object.keys(providers),
   auth: !!process.env.SABI_API_KEY || !!process.env.SABI_API_KEYS,
 });
 
-registerShutdownHandlers(() => server.stop());
+process.on("SIGINT", () => {
+  log.info("Shutting down (SIGINT)");
+  server.stop();
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  log.info("Shutting down (SIGTERM)");
+  server.stop();
+  process.exit(0);
+});

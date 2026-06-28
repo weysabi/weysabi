@@ -17,7 +17,6 @@
   },
   "files": [
     "src",
-    "drizzle",
     "README.md",
     "LICENSE"
   ],
@@ -26,10 +25,7 @@
     "dev": "bun --watch ./src/index.ts",
     "format": "bunx prettier --write .",
     "typecheck": "bunx tsc --noEmit",
-    "test": "bun test",
-    "db:generate": "bunx drizzle-kit generate",
-    "db:push": "bunx drizzle-kit push",
-    "db:migrate": "bunx drizzle-kit migrate"
+    "test": "bun test"
   },
   "license": "MIT",
   "repository": {
@@ -44,14 +40,11 @@
     "@joinremba/catalog": "^0.5.0",
     "@joinremba/gate": "^0.5.3",
     "@weysabi/sabi": "^0.9.0",
-    "drizzle-orm": "^0.45.2",
     "hono": "^4.12.26",
-    "postgres": "^3.4.9",
     "zod": "^4.4.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "drizzle-kit": "^0.31.10",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3"
   }

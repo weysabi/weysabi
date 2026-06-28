@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import {
-  resolveProvidersWithGuard,
+  loadConfig,
+  resolveProviders,
   testProvider,
   printTable,
   statusIcon,
@@ -13,7 +14,24 @@ export async function benchmarkCommand(options: {
 }): Promise<void> {
   p.intro("sabi benchmark");
 
-  const { providers } = resolveProvidersWithGuard(options);
+  let providers: Record<string, { apiKey: string }> = {};
+
+  if (!options.noConfig) {
+    const loaded = loadConfig();
+    if (loaded) {
+      providers = resolveProviders(loaded.config.providers);
+    }
+  }
+
+  if (Object.keys(providers).length === 0 && !options.noConfig) {
+    providers = resolveProviders();
+  }
+
+  if (Object.keys(providers).length === 0) {
+    p.log.error("No providers configured. Set env vars or run `sabi init`.");
+    p.outro("Benchmark cancelled");
+    process.exit(1);
+  }
 
   const entries = Object.entries(providers);
   const runs = 3;

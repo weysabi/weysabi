@@ -128,20 +128,6 @@ export interface ApiKeyStore {
   delete(projectId: string, keyId: string): Promise<void>;
 }
 
-// ─── Cleanup ────────────────────────────────────────────────
-
-export interface CleanupOptions {
-  /** Project ID to scope cleanup to. If unset, cleans up all projects. */
-  projectId?: string;
-  /** When true, return counts without deleting. */
-  dryRun?: boolean;
-}
-
-export interface CleanupResult {
-  deletedConversations: number;
-  deletedRuns: number;
-}
-
 // ─── Composed Control-Plane Store ──────────────────────────
 
 export interface ControlPlaneStore {
@@ -151,6 +137,5 @@ export interface ControlPlaneStore {
   runs: RunStore;
   documents: DocumentStore;
   apiKeys: ApiKeyStore;
-  cleanup(options?: CleanupOptions): Promise<CleanupResult>;
   close(): Promise<void>;
 }

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { createWeysabi, type CompleteRequest, type StreamRequest } from "@weysabi/sabi";
 import { createRouter } from "../routes";
 import { createSqliteControlPlaneStore } from "./sqlite-store";
-import type { TokenQuotaStore } from "../quota";
 
 type Router = { fetch: (req: Request) => Response | Promise<Response> };
 type Store = Awaited<ReturnType<typeof createSqliteControlPlaneStore>>;
@@ -1133,7 +1132,7 @@ describe("Control plane HTTP routes", () => {
     }
 
     it("allows a scoped project key to send managed conversation messages", async () => {
-      const secret = await createKey(["chat:write", "conversations:write"]);
+      const secret = await createKey(["chat:write", "conversations:read"]);
       const conversationRes = await router.fetch(
         controlRequest(`http://localhost/v1/projects/${projectId}/conversations`, {
           method: "POST",
@@ -1193,7 +1192,7 @@ describe("Control plane HTTP routes", () => {
     });
 
     it("idempotently retries managed message submission", async () => {
-      const secret = await createKey(["chat:write", "conversations:write"]);
+      const secret = await createKey(["chat:write", "conversations:read"]);
       const conversationRes = await router.fetch(
         controlRequest(`http://localhost/v1/projects/${projectId}/conversations`, {
           method: "POST",
@@ -1254,89 +1253,6 @@ describe("Control plane HTTP routes", () => {
         })
       );
       expect(conflictRes.status).toBe(409);
-    });
-  });
-
-  describe("quota rejection", () => {
-    let quotaRouter: Router;
-    let quotaProjectId: string;
-    let quotaConversationId: string;
-    const rejectingStore: TokenQuotaStore = {
-      async reserve() {
-        return { allowed: false, reason: "Monthly token limit exceeded" };
-      },
-      async commit() {},
-      async release() {},
-    };
-
-    beforeAll(async () => {
-      const sabi = createWeysabi({ groq: { apiKey: "test-key" } });
-      const store = await createSqliteControlPlaneStore(":memory:");
-      quotaRouter = await createRouter(sabi, {
-        adminApiKey: ADMIN_API_KEY,
-        controlPlaneStore: store,
-        quotaStore: rejectingStore,
-      });
-
-      const projectRes = await quotaRouter.fetch(
-        controlRequest("http://localhost/v1/projects", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: "Quota Test", slug: "quota-test" }),
-        })
-      );
-      const project = (await projectRes.json()) as Record<string, unknown>;
-      quotaProjectId = project.id as string;
-
-      const convRes = await quotaRouter.fetch(
-        controlRequest(`http://localhost/v1/projects/${quotaProjectId}/conversations`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: "Quota Test" }),
-        })
-      );
-      const conv = (await convRes.json()) as Record<string, unknown>;
-      quotaConversationId = conv.id as string;
-    });
-
-    it("sendMessage returns 429 when quota is exceeded", async () => {
-      const res = await quotaRouter.fetch(
-        controlRequest(
-          `http://localhost/v1/projects/${quotaProjectId}/conversations/${quotaConversationId}/messages/send`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ content: "hello", model: "test/model" }),
-          }
-        )
-      );
-      expect(res.status).toBe(429);
-      const body = (await res.json()) as { error: Record<string, unknown> };
-      expect(body.error?.code).toBe("QUOTA_EXCEEDED");
-    });
-
-    it("streamMessage yields QUOTA_EXCEEDED error event", async () => {
-      const res = await quotaRouter.fetch(
-        controlRequest(
-          `http://localhost/v1/projects/${quotaProjectId}/conversations/${quotaConversationId}/messages/stream`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ content: "hello", model: "test/model" }),
-          }
-        )
-      );
-      expect(res.status).toBe(200);
-      const text = await res.text();
-      const events = text
-        .split("\n")
-        .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
-        .map((l) => JSON.parse(l.slice(6)));
-
-      const errorEvent = events.find((e: Record<string, unknown>) => e.type === "error");
-      expect(errorEvent).toBeDefined();
-      expect((errorEvent as Record<string, unknown>)?.error).toBeDefined();
-      expect((errorEvent as { error: Record<string, unknown> }).error?.code).toBe("QUOTA_EXCEEDED");
     });
   });
 });
