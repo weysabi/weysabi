@@ -67,7 +67,7 @@ function serverTemplate(projectName: string): ProjectTemplate {
             },
             devDependencies: {
               "@types/bun": "latest",
-              typescript: "^6.0.3",
+              typescript: "^5",
             },
           },
           null,
@@ -564,13 +564,458 @@ The browser calls \`/api/chat\`; Sabi and provider credentials run server-side o
   };
 }
 
+function tanstackTemplate(projectName: string): ProjectTemplate {
+  const packageName = packageNameFromProjectName(projectName);
+
+  return {
+    files: [
+      {
+        path: "package.json",
+        content: `${JSON.stringify(
+          {
+            name: packageName,
+            version: "0.1.0",
+            private: true,
+            type: "module",
+            scripts: {
+              dev: "bun run --hot src/api/server.ts & bunx --bun vite",
+              build: "bun run src/api/server.ts & vite build",
+              typecheck: "bunx tsc --noEmit",
+            },
+            dependencies: {
+              "@tanstack/react-router": "^1",
+              "@weysabi/sabi": "^0.9.0",
+              react: "^19",
+              "react-dom": "^19",
+            },
+            devDependencies: {
+              "@types/bun": "latest",
+              "@types/react": "^19",
+              "@types/react-dom": "^19",
+              "@vitejs/plugin-react": "^4",
+              typescript: "^5",
+              vite: "^6",
+            },
+          },
+          null,
+          2
+        )}\n`,
+      },
+      {
+        path: "tsconfig.json",
+        content: JSON.stringify(
+          {
+            compilerOptions: {
+              lib: ["DOM", "DOM.Iterable", "ESNext"],
+              target: "ESNext",
+              module: "ESNext",
+              moduleResolution: "bundler",
+              jsx: "preserve",
+              strict: true,
+              skipLibCheck: true,
+              noEmit: true,
+              esModuleInterop: true,
+              allowSyntheticDefaultImports: true,
+              resolveJsonModule: true,
+              isolatedModules: true,
+              types: ["bun"],
+            },
+            include: ["src"],
+          },
+          null,
+          2
+        ) + "\n",
+      },
+      {
+        path: "vite.config.ts",
+        content: `import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: { "/api": "http://localhost:3001" },
+  },
+});
+`,
+      },
+      {
+        path: "index.html",
+        content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${projectName}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`,
+      },
+      {
+        path: "src/main.tsx",
+        content: `import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { routeTree } from "./routeTree.gen";
+
+const router = createRouter({ routeTree });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <RouterProvider router={router} />
+  </StrictMode>
+);
+`,
+      },
+      {
+        path: "src/routeTree.gen.ts",
+        content: `import { rootRoute } from "./routes/__root";
+import { Route } from "@tanstack/react-router";
+
+const indexRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  lazy: () => import("./routes/index").then((d) => d.route),
+});
+
+export const routeTree = rootRoute.addChildren([indexRoute]);
+`,
+      },
+      {
+        path: "src/routes/__root.tsx",
+        content: `import { Outlet, createRootRoute } from "@tanstack/react-router";
+
+export const rootRoute = createRootRoute({
+  component: () => (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${projectName}</title>
+      </head>
+      <body>
+        <Outlet />
+      </body>
+    </html>
+  ),
+});
+`,
+      },
+      {
+        path: "src/routes/index.tsx",
+        content: `import { FormEvent, useState } from "react";
+import { Route } from "@tanstack/react-router";
+import { rootRoute } from "./__root";
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+function IndexPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: "Ask me something. Sabi is wired on the server." },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = input.trim();
+    if (!content || loading) return;
+
+    const nextMessages = [...messages, { role: "user" as const, content }];
+    setMessages(nextMessages);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = (await response.json()) as { message: ChatMessage };
+      setMessages([...nextMessages, data.message]);
+    } catch (error) {
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: error instanceof Error ? error.message : "Request failed" },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main>
+      <h1>Sabi + TanStack</h1>
+      <p>This page calls <code>/api/chat</code>. Provider keys stay in environment variables.</p>
+      <div className="chat">
+        {messages.map((message, index) => (
+          <div className={\`message \${message.role}\`} key={\`\${message.role}-\${index}\`}>
+            <span>{message.role}</span>
+            <p>{message.content}</p>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={sendMessage}>
+        <input
+          aria-label="Message"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Ask Sabi..."
+        />
+        <button disabled={loading || input.trim().length === 0} type="submit">
+          {loading ? "Sending..." : "Send"}
+        </button>
+      </form>
+    </main>
+  );
+}
+
+export const route = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: IndexPage,
+});
+`,
+      },
+      {
+        path: "src/api/server.ts",
+        content: `import { createWeysabi } from "@weysabi/sabi";
+
+const PORT = 3001;
+
+type ChatMessage = { role: string; content: string };
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.role === "string" && typeof candidate.content === "string";
+}
+
+const sabi = createWeysabi(
+  { openai: { apiKey: process.env.OPENAI_API_KEY! } },
+  { defaultModel: process.env.SABI_DEFAULT_MODEL ?? "openai/gpt-4o-mini" }
+);
+
+Bun.serve({
+  port: PORT,
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/api/chat") {
+      const body = (await request.json()) as { messages?: unknown };
+      const messages = Array.isArray(body.messages) ? body.messages.filter(isChatMessage) : [];
+      if (messages.length === 0) {
+        return Response.json({ error: "messages is required" }, { status: 400 });
+      }
+
+      const response = await sabi.complete({ model: process.env.SABI_DEFAULT_MODEL ?? "openai/gpt-4o-mini", messages });
+      return Response.json({ message: { role: "assistant", content: response.content }, usage: response.usage });
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
+console.log(\`API server on http://localhost:\${PORT}\`);
+`,
+      },
+      {
+        path: ".env.example",
+        content: `# Server-only provider key. Never expose this in browser code.
+OPENAI_API_KEY=
+
+SABI_DEFAULT_MODEL=openai/gpt-4o-mini
+`,
+      },
+      {
+        path: ".gitignore",
+        content: `node_modules
+dist
+.env
+`,
+      },
+      {
+        path: "README.md",
+        content: `# ${projectName}
+
+Sabi TanStack starter.
+
+## Setup
+
+\`\`\`bash
+cp .env.example .env
+bun install
+bun run dev
+\`\`\`
+
+Opens Vite dev server on [http://localhost:5173](http://localhost:5173).
+The browser calls \`/api/chat\`; Sabi and provider credentials run server-side only.
+`,
+      },
+    ],
+    nextSteps: [
+      `cd ${projectName}`,
+      "cp .env.example .env",
+      "set OPENAI_API_KEY in .env",
+      "bun install",
+      "bun run dev",
+    ],
+  };
+}
+
+function agentTemplate(projectName: string): ProjectTemplate {
+  const packageName = packageNameFromProjectName(projectName);
+
+  return {
+    files: [
+      {
+        path: "package.json",
+        content: `${JSON.stringify(
+          {
+            name: packageName,
+            version: "0.1.0",
+            private: true,
+            type: "module",
+            scripts: {
+              dev: "bun run src/index.ts",
+              start: "bun run src/index.ts",
+              typecheck: "bunx tsc --noEmit",
+            },
+            dependencies: {
+              "@weysabi/sabi": "^0.9.0",
+              "@weysabi/server": "^0.9.0",
+            },
+            devDependencies: {
+              "@types/bun": "latest",
+              typescript: "^5",
+            },
+          },
+          null,
+          2
+        )}\n`,
+      },
+      {
+        path: "tsconfig.json",
+        content: JSON.stringify(
+          {
+            compilerOptions: {
+              lib: ["ESNext"],
+              target: "ESNext",
+              module: "Preserve",
+              moduleResolution: "bundler",
+              strict: true,
+              skipLibCheck: true,
+              types: ["bun"],
+            },
+            include: ["src"],
+          },
+          null,
+          2
+        ) + "\n",
+      },
+      {
+        path: "src/index.ts",
+        content: `import { createWeysabi } from "@weysabi/sabi";
+import { createServer, createSqliteControlPlaneStore } from "@weysabi/server";
+
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) throw new Error("OPENAI_API_KEY is required. See .env.example.");
+
+const sabi = createWeysabi(
+  { openai: { apiKey } },
+  { defaultModel: process.env.SABI_DEFAULT_MODEL ?? "openai/gpt-4o-mini" }
+);
+
+const server = await createServer(sabi, {
+  apiKey: process.env.SABI_API_KEY,
+  adminApiKey: process.env.SABI_ADMIN_API_KEY,
+  controlPlaneStore: createSqliteControlPlaneStore(".sabi/control.db"),
+});
+
+// Seed a project and prompt version via control plane
+const adminHeaders = { Authorization: \`Bearer \${process.env.SABI_ADMIN_API_KEY}\`, "content-type": "application/json" };
+const adminOrigin = \`http://\${server.hostname}:\${server.port}\`;
+
+const projectRes = await fetch(\`\${adminOrigin}/v1/projects\`, {
+  method: "POST",
+  headers: adminHeaders,
+  body: JSON.stringify({ name: "default" }),
+});
+const project = (await projectRes.json()) as { id: string };
+
+await fetch(\`\${adminOrigin}/v1/projects/\${project.id}/prompts\`, {
+  method: "POST",
+  headers: adminHeaders,
+  body: JSON.stringify({ name: "greeting", content: "Hello, {name}!" }),
+});
+
+console.log(\`Agent server at http://\${server.hostname}:\${server.port}\`);
+console.log(\`Project ID: \${project.id}\`);
+`,
+      },
+      {
+        path: ".env.example",
+        content: `OPENAI_API_KEY=
+SABI_API_KEY=dev-client-key
+SABI_ADMIN_API_KEY=dev-admin-key
+SABI_DEFAULT_MODEL=openai/gpt-4o-mini
+`,
+      },
+      {
+        path: ".gitignore",
+        content: `node_modules
+.env
+.sabi
+dist
+`,
+      },
+      {
+        path: "README.md",
+        content: `# ${projectName}
+
+Sabi agent starter with control-plane seeding.
+
+## Setup
+
+\`\`\`bash
+cp .env.example .env
+bun install
+bun run dev
+\`\`\`
+
+Starts a server and seeds a project + prompt version automatically.
+`,
+      },
+    ],
+    nextSteps: [
+      `cd ${projectName}`,
+      "cp .env.example .env",
+      "set OPENAI_API_KEY in .env",
+      "bun install",
+      "bun run dev",
+    ],
+  };
+}
+
 function getProjectTemplate(template: CreateTemplate, projectName: string): ProjectTemplate {
   if (template === "server") return serverTemplate(projectName);
   if (template === "nextjs") return nextjsTemplate(projectName);
-
-  throw new Error(
-    `${template} template is planned but not implemented yet. Use --template server for now.`
-  );
+  if (template === "tanstack") return tanstackTemplate(projectName);
+  return agentTemplate(projectName);
 }
 
 function writeTemplateFiles(targetDir: string, files: TemplateFile[]): void {
@@ -625,23 +1070,17 @@ export async function createCommand(
 ): Promise<void> {
   const rawTemplate = options.template ?? "server";
   if (!isCreateTemplate(rawTemplate)) {
-    console.error(`Unknown template: ${rawTemplate}. Use one of: ${TEMPLATES.join(", ")}.`);
-    process.exit(1);
+    throw new Error(`Unknown template: ${rawTemplate}. Use one of: ${TEMPLATES.join(", ")}.`);
   }
 
-  try {
-    const result = await createSabiProject(projectName, {
-      template: rawTemplate,
-      install: options.install,
-    });
+  const result = await createSabiProject(projectName, {
+    template: rawTemplate,
+    install: options.install,
+  });
 
-    console.log(`Created Sabi project: ${projectName}`);
-    console.log("Next steps:");
-    for (const step of result.nextSteps) {
-      console.log(`  ${step}`);
-    }
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+  console.log(`Created Sabi project: ${projectName}`);
+  console.log("Next steps:");
+  for (const step of result.nextSteps) {
+    console.log(`  ${step}`);
   }
 }
