@@ -20,7 +20,7 @@ function getMessages(ws: WebSocket): string[] {
   return (ws as unknown as { _messages: string[] })._messages;
 }
 
-describe("WebSocket handler", () => {
+describe("WS handler — WebSocket", () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeAll(() => {
@@ -96,5 +96,92 @@ describe("WebSocket handler", () => {
     expect(msgs).toHaveLength(1);
     const parsed = JSON.parse(msgs[0]!) as Record<string, unknown>;
     expect(parsed.type).toBe("error");
+  });
+});
+
+describe("WS handler — HTTP fallback", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeAll(() => {
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Hi!", role: "assistant" } }],
+            usage: { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )) as unknown as typeof globalThis.fetch;
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns SSE stream for valid chat message", async () => {
+    const weysabi = createWeysabi({ groq: { apiKey: "test" } });
+    const { handleHttp } = createWsHandler({
+      weysabi,
+      modelAliases: buildModelAliases(),
+    });
+
+    const req = new Request("http://localhost/v1/ws", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "chat",
+        id: "req-2",
+        model: "groq/llama-4-scout",
+        messages: [{ role: "user", content: "Hello" }],
+      }),
+    });
+
+    const res = await handleHttp(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+    const text = await res.text();
+    expect(text).toContain('"type":"done"');
+    expect(text).toContain('"id":"req-2"');
+  });
+
+  it("returns 400 for missing fields", async () => {
+    const weysabi = createWeysabi({ groq: { apiKey: "test" } });
+    const { handleHttp } = createWsHandler({
+      weysabi,
+      modelAliases: buildModelAliases(),
+    });
+
+    const req = new Request("http://localhost/v1/ws", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "chat", id: "req-3" }),
+    });
+
+    const res = await handleHttp(req);
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("Missing required fields");
+  });
+
+  it("returns 400 for invalid JSON", async () => {
+    const weysabi = createWeysabi({ groq: { apiKey: "test" } });
+    const { handleHttp } = createWsHandler({
+      weysabi,
+      modelAliases: buildModelAliases(),
+    });
+
+    const req = new Request("http://localhost/v1/ws", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not json",
+    });
+
+    const res = await handleHttp(req);
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("Invalid JSON");
   });
 });

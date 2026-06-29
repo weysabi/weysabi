@@ -159,11 +159,14 @@ export async function createServer(
       if (url.pathname === "/v1/ws") {
         const apiKeyParam = url.searchParams.get("apiKey");
         const keyFingerprint = apiKeyParam ? await fingerprintApiKey(apiKeyParam) : undefined;
-        const success = server.upgrade(req, {
-          data: { keyFingerprint },
-        } as never);
-        if (success) return;
-        return new Response("WebSocket upgrade failed", { status: 400 });
+        if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+          const success = server.upgrade(req, {
+            data: { keyFingerprint },
+          } as never);
+          if (success) return;
+          return new Response("WebSocket upgrade failed", { status: 400 });
+        }
+        return wsHandler.handleHttp(req);
       }
 
       return router.fetch(req);
