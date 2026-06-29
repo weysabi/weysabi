@@ -523,11 +523,13 @@ export async function createRouter(
       if (!options.idempotencyStore && "dispose" in idempotencyStore) {
         (idempotencyStore as IdempotencyStore & { dispose: () => void }).dispose();
       }
-      if (!options.quotaStore && "close" in quotaStore) {
-        (quotaStore as TokenQuotaStore & { close: () => void }).close();
+      if (!options.quotaStore) {
+        const qs = quotaStore as { close?: () => void };
+        if (qs && typeof qs.close === "function") qs.close();
       }
-      if (!options.usageLedger && "close" in usageLedger) {
-        (usageLedger as UsageLedger & { close: () => void }).close();
+      if (!options.usageLedger) {
+        const ul = usageLedger as { close?: () => void };
+        if (ul && typeof ul.close === "function") ul.close();
       }
     },
   };

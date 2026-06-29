@@ -56,7 +56,8 @@ export function createServerConfig(): Beacon {
     WEYSABI_MODEL_ALIASES: {
       type: "string",
       required: false,
-      description: "Comma-separated alias=provider/model pairs (e.g. weysabi-fast=groq/llama-4-scout)",
+      description:
+        "Comma-separated alias=provider/model pairs (e.g. weysabi-fast=groq/llama-4-scout)",
     },
     WEYSABI_OPENAI_API_KEY: { type: "string", required: false, secret: true },
     WEYSABI_GROQ_API_KEY: { type: "string", required: false, secret: true },
@@ -68,6 +69,35 @@ export function createServerConfig(): Beacon {
     WEYSABI_NVIDIA_API_KEY: { type: "string", required: false, secret: true },
     WEYSABI_OPENROUTER_API_KEY: { type: "string", required: false, secret: true },
     WEYSABI_OLLAMA_API_KEY: { type: "string", required: false, secret: true },
+    WEYSABI_STORAGE: {
+      type: "string",
+      required: false,
+      default: "sqlite",
+      description: "Storage backend: sqlite or postgres",
+    },
+    WEYSABI_DATABASE_URL: {
+      type: "string",
+      required: false,
+      secret: true,
+      description: "Postgres connection string (required when storage=postgres)",
+    },
+    WEYSABI_REDIS_URL: {
+      type: "string",
+      required: false,
+      secret: true,
+      description: "Redis connection string (optional)",
+    },
+    WEYSABI_AUTH_URL: {
+      type: "string",
+      required: false,
+      description: "Public URL for auth callbacks (default: http://localhost:<port>)",
+    },
+    WEYSABI_AUTH_SECRET: {
+      type: "string",
+      required: false,
+      secret: true,
+      description: "Auth session secret (default: auto-generated)",
+    },
   });
 }
 

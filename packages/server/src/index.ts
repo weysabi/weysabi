@@ -10,6 +10,7 @@ import type { UsageLedger } from "./ledger";
 import { createModuleLogger } from "./logger";
 import { createWsHandler } from "./ws";
 import { buildModelAliases } from "./aliases";
+import type { ModelAliasMap } from "./aliases";
 const log = createModuleLogger("server");
 
 export type { ServerOptions };
@@ -72,7 +73,7 @@ export async function createServer(
   fetch: (req: Request) => Response | Promise<Response>;
   port: number;
   hostname: string;
-  stop: () => void;
+  stop: () => void | Promise<void>;
 }> {
   const apiKey = options.apiKey ?? process.env.WEYSABI_API_KEY;
   const adminApiKey = options.adminApiKey ?? process.env.WEYSABI_ADMIN_API_KEY;
@@ -117,6 +118,8 @@ export async function createServer(
     }
   }
 
+  const modelAliasesMap: ModelAliasMap = buildModelAliases(options.modelAliases);
+
   const router = await createRouter(weysabi, {
     port,
     apiKey,
@@ -142,7 +145,7 @@ export async function createServer(
 
   const wsHandler = createWsHandler({
     weysabi,
-    modelAliases: buildModelAliases(options.modelAliases),
+    modelAliases: modelAliasesMap,
     quotaConfig: options.quotaConfig,
     quotaStore,
     usageLedger,
@@ -172,8 +175,14 @@ export async function createServer(
       return router.fetch(req);
     },
     websocket: {
+      open(ws) {
+        log.debug("ws connected", { connections: server.pendingRequests });
+      },
       async message(ws, message) {
         await wsHandler.handleMessage(ws as unknown as WebSocket, message as string | Buffer);
+      },
+      close(ws) {
+        log.debug("ws disconnected");
       },
     },
   });
@@ -183,7 +192,7 @@ export async function createServer(
     fetch: router.fetch as (req: Request) => Response | Promise<Response>,
     port: server.port as number,
     hostname,
-    stop: () => {
+    stop: async () => {
       if (stopped) return;
       stopped = true;
       server.stop();
@@ -197,8 +206,8 @@ export async function createServer(
         if (ul && typeof ul.close === "function") ul.close();
       }
       {
-        const cs = ctrlStore as { close?: () => void };
-        if (cs && typeof cs.close === "function") cs.close();
+        const cs = ctrlStore as { close?(): Promise<void> | void };
+        if (cs && typeof cs.close === "function") await cs.close();
       }
       if (options.closeSabiOnStop !== false) {
         weysabi.close?.();
