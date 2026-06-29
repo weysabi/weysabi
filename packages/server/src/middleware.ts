@@ -63,7 +63,7 @@ export function createAuth(keys: ApiKeyEntry[], options: AuthMiddlewareOptions =
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (c: any, next: any) => {
-    if (c.req.path === "/health") {
+    if (c.req.path === "/health" || c.req.path === "/metrics") {
       await next();
       return;
     }
@@ -154,6 +154,10 @@ export function createRateLimiter(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (c: any, next: any) => {
+    if (c.req.path === "/health" || c.req.path === "/metrics") {
+      await next();
+      return;
+    }
     const request = c.req.raw as Request;
     const keyFingerprint = await fingerprintRequestApiKey(request);
     const key = keyFingerprint

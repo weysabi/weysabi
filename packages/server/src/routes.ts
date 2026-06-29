@@ -35,6 +35,7 @@ import type { RagManagerConfig } from "./control/rag-service";
 import { createControlPlaneAuth } from "./control/auth";
 import { ControlError } from "./control/errors";
 import type { ControlPlaneStore } from "./control/store";
+import type { MetricsStore } from "./metrics";
 
 export interface ServerOptions {
   port?: number;
@@ -63,6 +64,7 @@ export interface ServerOptions {
   redisUrl?: string;
   authHandler?: (request: Request) => Response | Promise<Response>;
   ragConfig?: RagManagerConfig;
+  metricsStore?: MetricsStore;
 }
 
 type HonoApp = Hono;
@@ -219,11 +221,31 @@ export async function createRouter(
   app.use("/*", async (c: Context, next: () => Promise<void>) => {
     const start = Date.now();
     await next();
+    const durationMs = Date.now() - start;
+    const method = c.req.method;
+    const path = c.req.path;
+    const status = c.res.status;
+
+    if (options.metricsStore) {
+      const m = options.metricsStore;
+      m.incCounter(
+        "http_requests_total",
+        { method, path, status: String(status) },
+        "Total HTTP requests"
+      );
+      m.observeHistogram(
+        "http_request_duration_seconds",
+        durationMs / 1000,
+        { method, path },
+        "HTTP request duration in seconds"
+      );
+    }
+
     log.info("request", {
-      method: c.req.method,
-      path: c.req.path,
-      status: c.res.status,
-      durationMs: Date.now() - start,
+      method,
+      path,
+      status,
+      durationMs,
     });
   });
 
@@ -262,6 +284,13 @@ export async function createRouter(
   app.get("/health", (c: Context) => {
     return ok(c, { status: "ok", timestamp: Date.now() });
   });
+
+  if (options.metricsStore) {
+    app.get("/metrics", (c: Context) => {
+      const body = options.metricsStore!.textOutput();
+      return c.text(body, 200, { "content-type": "text/plain; version=0.0.4" });
+    });
+  }
 
   if (options.adminApiKey) {
     app.get("/v1/admin/stats", async (c: Context) => {

@@ -7,6 +7,7 @@ import { InMemoryTokenQuotaStore, SqliteTokenQuotaStore, fingerprintApiKey } fro
 import type { TokenQuotaStore } from "./quota";
 import { InMemoryUsageLedger, SqliteUsageLedger } from "./ledger";
 import type { UsageLedger } from "./ledger";
+import { MetricsStore } from "./metrics";
 import { createModuleLogger } from "./logger";
 import { createWsHandler } from "./ws";
 import { buildModelAliases } from "./aliases";
@@ -119,6 +120,7 @@ export async function createServer(
   }
 
   const modelAliasesMap: ModelAliasMap = buildModelAliases(options.modelAliases);
+  const metricsStore = new MetricsStore();
 
   const router = await createRouter(weysabi, {
     port,
@@ -141,6 +143,7 @@ export async function createServer(
     ragConfig: options.ragConfig,
     getRemoteAddress: (request) => remoteAddresses.get(request),
     authHandler,
+    metricsStore,
   });
 
   const wsHandler = createWsHandler({
@@ -175,14 +178,34 @@ export async function createServer(
       return router.fetch(req);
     },
     websocket: {
-      open(ws) {
-        log.debug("ws connected", { connections: server.pendingRequests });
+      open(_ws) {
+        metricsStore.incCounter(
+          "ws_connections_total",
+          { status: "connected" },
+          "Total WebSocket connections"
+        );
+        metricsStore.setGauge(
+          "ws_connections_active",
+          (server as unknown as { pendingRequests: number }).pendingRequests,
+          {},
+          "Active WebSocket connections"
+        );
       },
       async message(ws, message) {
         await wsHandler.handleMessage(ws as unknown as WebSocket, message as string | Buffer);
       },
-      close(ws) {
-        log.debug("ws disconnected");
+      close(_ws) {
+        metricsStore.incCounter(
+          "ws_connections_total",
+          { status: "disconnected" },
+          "Total WebSocket connections"
+        );
+        metricsStore.setGauge(
+          "ws_connections_active",
+          (server as unknown as { pendingRequests: number }).pendingRequests,
+          {},
+          "Active WebSocket connections"
+        );
       },
     },
   });
