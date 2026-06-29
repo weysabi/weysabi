@@ -1,6 +1,19 @@
-# Weysabi
+<p align="center">
+  <strong>Weysabi</strong>
+</p>
 
-**AI orchestration for fullstack devs.** Use your own API keys. Provider failover, structured output, streaming, circuit breaker. One dependency, zero token markup.
+<p align="center">
+  AI orchestration for fullstack devs — provider failover, structured output, streaming, RAG, guardrails, and prompt management. One dependency, zero token markup.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/weysabi"><img src="https://img.shields.io/npm/v/weysabi.svg" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/weysabi.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/Bun-%3E%3D1.3.1-black?logo=bun" alt="Bun">
+  <img src="https://img.shields.io/badge/TypeScript-6-blue" alt="TypeScript">
+</p>
+
+---
 
 ```ts
 import { createWeysabi } from "weysabi";
