@@ -11,6 +11,7 @@ RUN bun install --frozen-lockfile --production
 
 COPY packages/weysabi/src packages/weysabi/src
 COPY packages/server/src packages/server/src
+COPY packages/server/drizzle packages/server/drizzle
 
 ENV WEYSABI_PORT=3000
 EXPOSE 3000

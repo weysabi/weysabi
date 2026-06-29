@@ -2,7 +2,13 @@ import { mkdirSync } from "fs";
 import { dirname, resolve } from "path";
 import type { Weysabi } from "weysabi";
 import { createRouter, type ServerOptions } from "./routes";
-import { createSqliteControlPlaneStore } from "./control";
+import { createPostgresControlPlaneStore, createSqliteControlPlaneStore } from "./control";
+import { InMemoryTokenQuotaStore, SqliteTokenQuotaStore } from "./quota";
+import type { TokenQuotaStore } from "./quota";
+import { InMemoryUsageLedger, SqliteUsageLedger } from "./ledger";
+import type { UsageLedger } from "./ledger";
+import { createModuleLogger } from "./logger";
+const log = createModuleLogger("server");
 
 export type { ServerOptions };
 
@@ -19,14 +25,42 @@ function envInteger(name: string, fallback: number): number {
 function resolveControlPlaneStore(options: ServerOptions) {
   const explicit = options.controlPlaneStore;
   if (explicit) return explicit;
-  if (options.controlPlane) {
-    const dbPath = options.storage === "sqlite"
-      ? resolve(process.env.WEYSABI_CONTROL_DB ?? ".weysabi/control.db")
-      : resolve(".weysabi/control.db");
-    mkdirSync(dirname(dbPath), { recursive: true });
-    return createSqliteControlPlaneStore(dbPath);
+  if (!options.controlPlane) return undefined;
+
+  if (options.storage === "postgres") {
+    const connectionString = options.databaseUrl ?? process.env.WEYSABI_DATABASE_URL;
+    if (!connectionString) {
+      throw new Error("WEYSABI_DATABASE_URL is required when storage is 'postgres'");
+    }
+    return createPostgresControlPlaneStore({ connectionString });
   }
-  return undefined;
+
+  const dbPath = resolve(
+    process.env.WEYSABI_CONTROL_DB ??
+      (options.storage === "sqlite" ? ".weysabi/control.db" : ".weysabi/control.db")
+  );
+  mkdirSync(dirname(dbPath), { recursive: true });
+  return createSqliteControlPlaneStore(dbPath);
+}
+
+async function resolveQuotaStore(options: ServerOptions): Promise<TokenQuotaStore> {
+  if (options.quotaStore) return options.quotaStore;
+  if (options.storage === "sqlite") {
+    const dbPath = resolve(process.env.WEYSABI_QUOTA_DB ?? ".weysabi/quota.db");
+    mkdirSync(dirname(dbPath), { recursive: true });
+    return SqliteTokenQuotaStore.create(dbPath);
+  }
+  return new InMemoryTokenQuotaStore();
+}
+
+async function resolveUsageLedger(options: ServerOptions): Promise<UsageLedger> {
+  if (options.usageLedger) return options.usageLedger;
+  if (options.storage === "sqlite") {
+    const dbPath = resolve(process.env.WEYSABI_LEDGER_DB ?? ".weysabi/ledger.db");
+    mkdirSync(dirname(dbPath), { recursive: true });
+    return SqliteUsageLedger.create(dbPath);
+  }
+  return new InMemoryUsageLedger();
 }
 
 export async function createServer(
@@ -60,6 +94,26 @@ export async function createServer(
   const remoteAddresses = new WeakMap<Request, string>();
 
   const ctrlStore = resolveControlPlaneStore(options);
+  const [quotaStore, usageLedger] = await Promise.all([
+    resolveQuotaStore(options),
+    resolveUsageLedger(options),
+  ]);
+
+  const databaseUrl = options.databaseUrl ?? process.env.WEYSABI_DATABASE_URL;
+  let authHandler: ((request: Request) => Response | Promise<Response>) | undefined;
+  if (options.storage === "postgres" && databaseUrl) {
+    try {
+      const { createAuth } = await import("./auth");
+      const auth = await createAuth(
+        databaseUrl,
+        process.env.WEYSABI_AUTH_URL ?? `http://localhost:${port}`,
+        process.env.WEYSABI_AUTH_SECRET ?? crypto.randomUUID()
+      );
+      authHandler = (request: Request) => auth.handler(request);
+    } catch (error) {
+      log.warn("better-auth initialization failed — auth endpoints disabled", { error });
+    }
+  }
 
   const router = await createRouter(weysabi, {
     port,
@@ -71,8 +125,8 @@ export async function createServer(
     providers: options.providers,
     modelAliases: options.modelAliases,
     quotaConfig: options.quotaConfig,
-    quotaStore: options.quotaStore,
-    usageLedger: options.usageLedger,
+    quotaStore,
+    usageLedger,
     idempotencyTtl,
     maxBodyBytes,
     trustedProxies,
@@ -81,6 +135,7 @@ export async function createServer(
     controlPlaneStore: ctrlStore,
     ragConfig: options.ragConfig,
     getRemoteAddress: (request) => remoteAddresses.get(request),
+    authHandler,
   });
 
   const server = Bun.serve({
@@ -113,14 +168,19 @@ export async function createServer(
 export type { ApiKeyEntry, IdempotencyStore, RateLimitStore } from "./middleware";
 export { buildModelAliases, getAliasesList, resolveAlias } from "./aliases";
 export type { ModelAlias, ModelAliasMap } from "./aliases";
-export { fingerprintApiKey, fingerprintRequestApiKey, InMemoryTokenQuotaStore } from "./quota";
+export {
+  fingerprintApiKey,
+  fingerprintRequestApiKey,
+  InMemoryTokenQuotaStore,
+  SqliteTokenQuotaStore,
+} from "./quota";
 export type {
   QuotaReservation,
   QuotaReservationResult,
   TokenQuotaConfig,
   TokenQuotaStore,
 } from "./quota";
-export { InMemoryUsageLedger } from "./ledger";
+export { InMemoryUsageLedger, SqliteUsageLedger } from "./ledger";
 export type { UsageLedger, UsageRecord } from "./ledger";
 export {
   RedisIdempotencyStore,

@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
 import { createWeysabi } from "weysabi";
 import type { Weysabi } from "weysabi";
 import { createRouter } from "./routes";
-import { fingerprintApiKey, fingerprintRequestApiKey, InMemoryTokenQuotaStore } from "./quota";
+import {
+  fingerprintApiKey,
+  fingerprintRequestApiKey,
+  InMemoryTokenQuotaStore,
+  SqliteTokenQuotaStore,
+} from "./quota";
 
 describe("Token quotas", () => {
   describe("InMemoryTokenQuotaStore", () => {
@@ -64,6 +69,91 @@ describe("Token quotas", () => {
 
       expect((await store.reserve("key-a", 1, { maxTokensPerMin: 1000 })).allowed).toBeFalse();
       expect((await store.reserve("key-b", 1000, { maxTokensPerMin: 1000 })).allowed).toBeTrue();
+    });
+  });
+
+  describe("SqliteTokenQuotaStore", () => {
+    let store: SqliteTokenQuotaStore;
+
+    beforeEach(async () => {
+      store = await SqliteTokenQuotaStore.create(":memory:");
+    });
+
+    afterEach(() => {
+      store.close();
+    });
+
+    it("reserves and commits actual usage", async () => {
+      const result = await store.reserve("key-1", 600, { maxTokensPerMin: 1000 });
+      expect(result.allowed).toBeTrue();
+      if (!result.allowed) throw new Error("reservation should be allowed");
+      await store.commit(result.reservation.id, 400);
+
+      const next = await store.reserve("key-1", 601, { maxTokensPerMin: 1000 });
+      expect(next.allowed).toBeFalse();
+    });
+
+    it("counts pending reservations atomically", async () => {
+      const [first, second] = await Promise.all([
+        store.reserve("key-1", 600, { maxTokensPerMin: 1000 }),
+        store.reserve("key-1", 600, { maxTokensPerMin: 1000 }),
+      ]);
+
+      expect([first.allowed, second.allowed].filter(Boolean)).toHaveLength(1);
+      const rejected = first.allowed ? second : first;
+      expect(rejected.allowed).toBeFalse();
+      if (rejected.allowed) throw new Error("one reservation should be rejected");
+      expect(rejected.reason).toInclude("Token quota exceeded");
+    });
+
+    it("releases unused reservations", async () => {
+      const first = await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 });
+      expect(first.allowed).toBeTrue();
+      if (!first.allowed) throw new Error("reservation should be allowed");
+      await store.release(first.reservation.id);
+
+      const second = await store.reserve("key-1", 1000, { maxTokensPerMin: 1000 });
+      expect(second.allowed).toBeTrue();
+    });
+
+    it("tracks keys independently", async () => {
+      const first = await store.reserve("key-a", 1000, { maxTokensPerMin: 1000 });
+      if (!first.allowed) throw new Error("reservation should be allowed");
+
+      expect((await store.reserve("key-a", 1, { maxTokensPerMin: 1000 })).allowed).toBeFalse();
+      expect((await store.reserve("key-b", 1000, { maxTokensPerMin: 1000 })).allowed).toBeTrue();
+    });
+
+    it("handles per-day quotas", async () => {
+      const result = await store.reserve("key-1", 100, { maxTokensPerDay: 500 });
+      expect(result.allowed).toBeTrue();
+      if (!result.allowed) throw new Error("reservation should be allowed");
+      await store.commit(result.reservation.id, 100);
+
+      const exceeded = await store.reserve("key-1", 401, { maxTokensPerDay: 500 });
+      expect(exceeded.allowed).toBeFalse();
+    });
+
+    it("persists data across instances (file-based)", async () => {
+      const tmpPath = `.weysabi/test-quota-${Date.now()}.db`;
+      try {
+        const storeA = await SqliteTokenQuotaStore.create(tmpPath);
+        const result = await storeA.reserve("key-1", 100, { maxTokensPerMin: 1000 });
+        if (!result.allowed) throw new Error("reservation should be allowed");
+        await storeA.commit(result.reservation.id, 100);
+        storeA.close();
+
+        const storeB = await SqliteTokenQuotaStore.create(tmpPath);
+        const next = await storeB.reserve("key-1", 901, { maxTokensPerMin: 1000 });
+        expect(next.allowed).toBeFalse();
+        storeB.close();
+      } finally {
+        try {
+          Bun.spawnSync(["rm", "-f", tmpPath]);
+        } catch {
+          /* ignore */
+        }
+      }
     });
   });
 

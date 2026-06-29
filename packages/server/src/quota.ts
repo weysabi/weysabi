@@ -33,6 +33,8 @@ interface PendingReservation extends QuotaReservation {
   expiresAt: number;
 }
 
+import type { Database } from "bun:sqlite";
+
 export class InMemoryTokenQuotaStore implements TokenQuotaStore {
   private windows = new Map<string, UsageEntry[]>();
   private reservations = new Map<string, PendingReservation>();
@@ -122,6 +124,152 @@ export class InMemoryTokenQuotaStore implements TokenQuotaStore {
       if (current.length > 0) this.windows.set(key, current);
       else this.windows.delete(key);
     }
+  }
+}
+
+export class SqliteTokenQuotaStore implements TokenQuotaStore {
+  private db: Database;
+  private cleanupInterval: ReturnType<typeof setInterval> | undefined;
+  private readonly reservationTtlMs: number;
+
+  private constructor(db: Database, reservationTtlMs: number) {
+    this.db = db;
+    this.reservationTtlMs = reservationTtlMs;
+  }
+
+  static async create(
+    path = ".weysabi/quota.db",
+    reservationTtlMs = 5 * 60_000
+  ): Promise<SqliteTokenQuotaStore> {
+    const { Database } = (await import("bun:sqlite")) as {
+      Database: new (path: string) => Database;
+    };
+    const db = new Database(path);
+    db.run("PRAGMA journal_mode = WAL");
+    db.run("PRAGMA synchronous = NORMAL");
+    db.run(`
+      CREATE TABLE IF NOT EXISTS usage_entries (
+        key TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        tokens INTEGER NOT NULL
+      )
+    `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS reservations (
+        id TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
+        reserved_tokens INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )
+    `);
+    db.run("CREATE INDEX IF NOT EXISTS idx_usage_key_ts ON usage_entries(key, timestamp)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_reservations_key ON reservations(key)");
+    const store = new SqliteTokenQuotaStore(db, reservationTtlMs);
+    store.cleanupInterval = setInterval(() => {
+      store.cleanupExpired();
+    }, 60_000);
+    return store;
+  }
+
+  private getNow(): number {
+    return Date.now();
+  }
+
+  async reserve(
+    key: string,
+    estimatedTokens: number,
+    config: TokenQuotaConfig
+  ): Promise<QuotaReservationResult> {
+    if (!Number.isInteger(estimatedTokens) || estimatedTokens < 1) {
+      throw new Error("estimatedTokens must be a positive integer");
+    }
+
+    const now = this.getNow();
+    this.cleanupExpired();
+
+    const pendingStmt = this.db.query(
+      "SELECT COALESCE(SUM(reserved_tokens), 0) FROM reservations WHERE key = ?"
+    );
+    const pendingTokens = Number(
+      (pendingStmt.get(key) as Record<string, unknown>)["COALESCE(SUM(reserved_tokens), 0)"]
+    );
+
+    if (config.maxTokensPerMin !== undefined) {
+      const minuteStmt = this.db.query(
+        "SELECT COALESCE(SUM(tokens), 0) FROM usage_entries WHERE key = ? AND timestamp > ?"
+      );
+      const minuteTokens =
+        Number(
+          (minuteStmt.get(key, now - 60_000) as Record<string, unknown>)["COALESCE(SUM(tokens), 0)"]
+        ) + pendingTokens;
+      if (minuteTokens + estimatedTokens > config.maxTokensPerMin) {
+        return {
+          allowed: false,
+          reason: `Token quota exceeded: ${minuteTokens}/${config.maxTokensPerMin} per minute`,
+        };
+      }
+    }
+
+    if (config.maxTokensPerDay !== undefined) {
+      const dayStmt = this.db.query(
+        "SELECT COALESCE(SUM(tokens), 0) FROM usage_entries WHERE key = ? AND timestamp > ?"
+      );
+      const dayTokens =
+        Number(
+          (dayStmt.get(key, now - 86_400_000) as Record<string, unknown>)[
+            "COALESCE(SUM(tokens), 0)"
+          ]
+        ) + pendingTokens;
+      if (dayTokens + estimatedTokens > config.maxTokensPerDay) {
+        return {
+          allowed: false,
+          reason: `Token quota exceeded: ${dayTokens}/${config.maxTokensPerDay} per day`,
+        };
+      }
+    }
+
+    const id = crypto.randomUUID();
+    const insertStmt = this.db.query(
+      "INSERT INTO reservations (id, key, reserved_tokens, expires_at) VALUES (?, ?, ?, ?)"
+    );
+    insertStmt.run(id, key, estimatedTokens, now + this.reservationTtlMs);
+
+    return {
+      allowed: true,
+      reservation: { id, key, reservedTokens: estimatedTokens },
+    };
+  }
+
+  async commit(reservationId: string, actualTokens: number): Promise<void> {
+    if (!Number.isInteger(actualTokens) || actualTokens < 0) {
+      throw new Error("actualTokens must be a non-negative integer");
+    }
+
+    const getStmt = this.db.query("SELECT key FROM reservations WHERE id = ?");
+    const row = getStmt.get(reservationId) as { key: string } | null;
+    if (!row) return;
+
+    this.db.run("DELETE FROM reservations WHERE id = ?", [reservationId]);
+    this.db.run("INSERT INTO usage_entries (key, timestamp, tokens) VALUES (?, ?, ?)", [
+      row.key,
+      Date.now(),
+      actualTokens,
+    ]);
+  }
+
+  async release(reservationId: string): Promise<void> {
+    this.db.run("DELETE FROM reservations WHERE id = ?", [reservationId]);
+  }
+
+  private cleanupExpired(): void {
+    const now = this.getNow();
+    this.db.run("DELETE FROM reservations WHERE expires_at <= ?", [now]);
+    this.db.run("DELETE FROM usage_entries WHERE timestamp <= ?", [now - 86_400_000]);
+  }
+
+  close(): void {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    this.db.close();
   }
 }
 

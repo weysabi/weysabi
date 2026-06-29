@@ -47,6 +47,11 @@ ENVIRONMENT
   WEYSABI_CORS_ORIGINS         CORS origins, comma-separated (default: *)
   WEYSABI_RATE_LIMIT_RPM       Rate limit per minute (default: 300)
   WEYSABI_IDEMPOTENCY_TTL      Idempotency key TTL in seconds (default: 86400)
+  WEYSABI_STORAGE              Storage backend: sqlite (default) or postgres
+  WEYSABI_DATABASE_URL         Postgres connection string (required for postgres storage)
+  WEYSABI_REDIS_URL            Redis connection string (optional)
+  WEYSABI_AUTH_URL             Public URL for auth callbacks (default: http://localhost:<port>)
+  WEYSABI_AUTH_SECRET          Auth session secret (default: auto-generated)
 `);
   process.exit(0);
 }
@@ -58,6 +63,7 @@ const { createWeysabi } = await import("weysabi");
 const weysabi = createWeysabi(providers);
 
 const { createServer } = await import("./index");
+const storage = (process.env.WEYSABI_STORAGE ?? "sqlite") as "sqlite" | "postgres";
 const server = await createServer(weysabi, {
   port: port ?? (process.env.WEYSABI_PORT ? Number(process.env.WEYSABI_PORT) : undefined),
   hostname: host ?? process.env.WEYSABI_HOST,
@@ -65,6 +71,10 @@ const server = await createServer(weysabi, {
   adminApiKey: process.env.WEYSABI_ADMIN_API_KEY || undefined,
   apiKeys: process.env.WEYSABI_API_KEYS ? parseApiKeys(process.env.WEYSABI_API_KEYS) : undefined,
   providers: providerNames(providers),
+  storage,
+  databaseUrl: process.env.WEYSABI_DATABASE_URL || undefined,
+  redisUrl: process.env.WEYSABI_REDIS_URL || undefined,
+  controlPlane: true,
 });
 
 const displayHost =

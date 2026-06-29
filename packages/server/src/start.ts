@@ -24,7 +24,9 @@ const port = config.get<number>("WEYSABI_PORT");
 const hostname = config.get<string>("WEYSABI_HOST");
 const apiKey = config.get<string>("WEYSABI_API_KEY") || undefined;
 const adminApiKey = config.get<string>("WEYSABI_ADMIN_API_KEY") || undefined;
-const apiKeys = process.env.WEYSABI_API_KEYS ? parseApiKeys(process.env.WEYSABI_API_KEYS) : undefined;
+const apiKeys = process.env.WEYSABI_API_KEYS
+  ? parseApiKeys(process.env.WEYSABI_API_KEYS)
+  : undefined;
 const corsOrigins = config
   .get<string>("WEYSABI_CORS_ORIGINS")
   .split(",")
@@ -38,6 +40,7 @@ const trustedProxies = config
   .map((value) => value.trim())
   .filter(Boolean);
 
+const storage = (process.env.WEYSABI_STORAGE ?? "sqlite") as "sqlite" | "postgres";
 const server = await createServer(weysabi, {
   port,
   hostname,
@@ -50,6 +53,10 @@ const server = await createServer(weysabi, {
   idempotencyTtl,
   maxBodyBytes,
   trustedProxies,
+  storage,
+  databaseUrl: process.env.WEYSABI_DATABASE_URL || undefined,
+  redisUrl: process.env.WEYSABI_REDIS_URL || undefined,
+  controlPlane: true,
 });
 
 log.info("Weysabi Server ready", {

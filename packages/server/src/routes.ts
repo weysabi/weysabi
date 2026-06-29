@@ -58,7 +58,10 @@ export interface ServerOptions {
   closeSabiOnStop?: boolean;
   controlPlaneStore?: ControlPlaneStore;
   controlPlane?: boolean;
-  storage?: "sqlite";
+  storage?: "sqlite" | "postgres";
+  databaseUrl?: string;
+  redisUrl?: string;
+  authHandler?: (request: Request) => Response | Promise<Response>;
   ragConfig?: RagManagerConfig;
 }
 
@@ -131,10 +134,17 @@ export async function createRouter(
         allowHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
         exposeHeaders: ["Content-Length"],
         maxAge: 86400,
+        credentials: true,
       })
     );
   } catch {
     // cors() is a no-op if Hono is too old
+  }
+
+  if (options.authHandler) {
+    app.on(["POST", "GET"], "/api/auth/*", (c) => {
+      return options.authHandler!(c.req.raw);
+    });
   }
 
   const apiKeys = resolveApiKeys(options.apiKey, options.apiKeys);
@@ -512,6 +522,12 @@ export async function createRouter(
       }
       if (!options.idempotencyStore && "dispose" in idempotencyStore) {
         (idempotencyStore as IdempotencyStore & { dispose: () => void }).dispose();
+      }
+      if (!options.quotaStore && "close" in quotaStore) {
+        (quotaStore as TokenQuotaStore & { close: () => void }).close();
+      }
+      if (!options.usageLedger && "close" in usageLedger) {
+        (usageLedger as UsageLedger & { close: () => void }).close();
       }
     },
   };

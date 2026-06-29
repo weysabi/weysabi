@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: weysabi
+      POSTGRES_PASSWORD: weysabi
+      POSTGRES_DB: weysabi
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weysabi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  weysabi-server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      WEYSABI_PORT: "3000"
+      WEYSABI_DATABASE_URL: "postgres://weysabi:weysabi@postgres:5432/weysabi"
+      WEYSABI_REDIS_URL: "redis://redis:6379"
+      WEYSABI_STORAGE: "postgres"
+      WEYSABI_API_KEY: "${WEYSABI_API_KEY:-}"
+      WEYSABI_ADMIN_API_KEY: "${WEYSABI_ADMIN_API_KEY:-}"
+      WEYSABI_OPENAI_API_KEY: "${WEYSABI_OPENAI_API_KEY:-}"
+      WEYSABI_GROQ_API_KEY: "${WEYSABI_GROQ_API_KEY:-}"
+      WEYSABI_ANTHROPIC_API_KEY: "${WEYSABI_ANTHROPIC_API_KEY:-}"
+      WEYSABI_GOOGLE_API_KEY: "${WEYSABI_GOOGLE_API_KEY:-}"
+      WEYSABI_MISTRAL_API_KEY: "${WEYSABI_MISTRAL_API_KEY:-}"
+      WEYSABI_DEEPSEEK_API_KEY: "${WEYSABI_DEEPSEEK_API_KEY:-}"
+      WEYSABI_TOGETHER_API_KEY: "${WEYSABI_TOGETHER_API_KEY:-}"
+      WEYSABI_NVIDIA_API_KEY: "${WEYSABI_NVIDIA_API_KEY:-}"
+      WEYSABI_OPENROUTER_API_KEY: "${WEYSABI_OPENROUTER_API_KEY:-}"
+      WEYSABI_OLLAMA_API_KEY: "${WEYSABI_OLLAMA_API_KEY:-}"
+      WEYSABI_RATE_LIMIT_RPM: "${WEYSABI_RATE_LIMIT_RPM:-300}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
