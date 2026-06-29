@@ -1,5 +1,6 @@
-import type { Weysabi } from "weysabi";
+import type { Weysabi, CacheAdapter } from "weysabi";
 import { AllModelsFailedError } from "weysabi/errors";
+import { cacheKey } from "weysabi";
 import { InMemoryRateLimitStore } from "@joinremba/gate/rate-limit";
 import { InMemoryStore } from "@joinremba/gate/idempotency";
 import { z } from "zod";
@@ -65,6 +66,8 @@ export interface ServerOptions {
   authHandler?: (request: Request) => Response | Promise<Response>;
   ragConfig?: RagManagerConfig;
   metricsStore?: MetricsStore;
+  responseCache?: CacheAdapter;
+  responseCacheTtl?: number;
 }
 
 type HonoApp = Hono;
@@ -362,6 +365,29 @@ export async function createRouter(
     if (request.fallbacks) {
       request.fallbacks = request.fallbacks.map((model) => resolveAlias(modelAliases, model));
     }
+
+    const responseCache = options.responseCache;
+    const responseCacheTtl = options.responseCacheTtl ?? 60_000;
+    const responseCacheKey = !stream && responseCache ? cacheKey(request) : undefined;
+    if (responseCacheKey) {
+      try {
+        const cached = await responseCache!.get(responseCacheKey);
+        if (cached) {
+          log.info("response cache hit", { model: request.model });
+          const translated = translateResponse(cached, request.model as string);
+          if (idempKey && requestFingerprint) {
+            await idemp.setResponse(idempKey, {
+              fingerprint: requestFingerprint,
+              response: translated,
+            });
+          }
+          return ok(c, translated);
+        }
+      } catch {
+        log.warn("Response cache read failed, proceeding without cache");
+      }
+    }
+
     const keyFingerprint = await fingerprintRequestApiKey(c.req.raw);
     let quotaReservation: QuotaReservation | undefined;
 
@@ -492,6 +518,14 @@ export async function createRouter(
         fingerprint: requestFingerprint,
         response: translated,
       });
+    }
+
+    if (responseCacheKey && responseCache) {
+      try {
+        await responseCache.set(responseCacheKey, response, responseCacheTtl);
+      } catch {
+        log.warn("Response cache write failed, response delivered uncached");
+      }
     }
 
     log.info("chat completion success", {
