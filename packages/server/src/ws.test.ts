@@ -184,4 +184,39 @@ describe("WS handler — HTTP fallback", () => {
     const text = await res.text();
     expect(text).toContain("Invalid JSON");
   });
+
+  it("returns 429 when quota exceeded", async () => {
+    const weysabi = createWeysabi({ groq: { apiKey: "test" } });
+    const store = new (await import("./quota")).InMemoryTokenQuotaStore();
+    const key = await (await import("./quota")).fingerprintApiKey("sk-limited-key");
+    const { handleHttp } = createWsHandler({
+      weysabi,
+      modelAliases: buildModelAliases(),
+      quotaConfig: { maxTokensPerMin: 10 },
+      quotaStore: store,
+    });
+
+    const reservation = await store.reserve(key, 10, { maxTokensPerMin: 10 });
+    if (!reservation.allowed) throw new Error("reservation should be allowed");
+    await store.commit(reservation.reservation.id, 10);
+
+    const req = new Request("http://localhost/v1/ws?apiKey=sk-limited-key", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer sk-limited-key",
+      },
+      body: JSON.stringify({
+        type: "chat",
+        id: "req-quota",
+        model: "groq/llama-4-scout",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    const res = await handleHttp(req);
+    expect(res.status).toBe(429);
+    const text = await res.text();
+    expect(text).toContain("QUOTA_EXCEEDED");
+  });
 });

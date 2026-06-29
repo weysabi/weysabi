@@ -188,6 +188,18 @@ export async function createServer(
       stopped = true;
       server.stop();
       router.close();
+      {
+        const qs = quotaStore as { close?: () => void };
+        if (qs && typeof qs.close === "function") qs.close();
+      }
+      {
+        const ul = usageLedger as { close?: () => void };
+        if (ul && typeof ul.close === "function") ul.close();
+      }
+      {
+        const cs = ctrlStore as { close?: () => void };
+        if (cs && typeof cs.close === "function") cs.close();
+      }
       if (options.closeSabiOnStop !== false) {
         weysabi.close?.();
       }

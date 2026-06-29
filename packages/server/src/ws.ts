@@ -3,6 +3,7 @@ import { AllModelsFailedError } from "weysabi/errors";
 import { translateRequest } from "./translate";
 import { resolveAlias } from "./aliases";
 import type { ModelAliasMap } from "./aliases";
+import { fingerprintApiKey } from "./quota";
 import type { QuotaReservation, TokenQuotaConfig, TokenQuotaStore } from "./quota";
 import type { UsageLedger } from "./ledger";
 import { createModuleLogger } from "./logger";
@@ -64,6 +65,22 @@ export function createWsHandler(options: {
       );
     }
 
+    const authHeader = req.headers.get("authorization");
+    const apiKey = authHeader?.replace(/^Bearer\s*/i, "").trim();
+    const keyFingerprint = apiKey ? await fingerprintApiKey(apiKey) : undefined;
+    let quotaReservation: QuotaReservation | undefined;
+
+    if (quotaConfig && keyFingerprint) {
+      const result = await quotaStore!.reserve(keyFingerprint, estimateTokens(body), quotaConfig);
+      if (!result.allowed) {
+        return new Response(
+          sseEvent({ type: "error", id: body.id, error: result.reason, code: "QUOTA_EXCEEDED" }),
+          { status: 429, headers: { "content-type": "text/event-stream" } }
+        );
+      }
+      quotaReservation = result.reservation;
+    }
+
     const model = resolveAlias(modelAliases, body.model);
     const streamReq = translateRequest({
       model: body.model,
@@ -76,6 +93,21 @@ export function createWsHandler(options: {
     const start = Date.now();
     log.info("ws http fallback start", { id: body.id, model });
 
+    async function commitQuota(actualTokens?: number) {
+      if (!quotaReservation) return;
+      await quotaStore!.commit(
+        quotaReservation.id,
+        actualTokens ?? quotaReservation.reservedTokens
+      );
+      quotaReservation = undefined;
+    }
+
+    async function releaseQuota() {
+      if (!quotaReservation) return;
+      await quotaStore!.release(quotaReservation.id);
+      quotaReservation = undefined;
+    }
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
@@ -85,7 +117,9 @@ export function createWsHandler(options: {
 
           for await (const chunk of iterable as AsyncIterable<StreamChunk>) {
             if (chunk.content) {
-              controller.enqueue(encoder.encode(sseEvent({ type: "token", id: body.id, content: chunk.content })));
+              controller.enqueue(
+                encoder.encode(sseEvent({ type: "token", id: body.id, content: chunk.content }))
+              );
             }
             if (chunk.usage) {
               totalTokens = chunk.usage.totalTokens;
@@ -93,14 +127,35 @@ export function createWsHandler(options: {
             }
           }
 
+          await commitQuota(totalTokens || undefined);
+
           const usage = { promptTokens, completionTokens: totalTokens - promptTokens, totalTokens };
           controller.enqueue(encoder.encode(sseEvent({ type: "done", id: body.id, usage })));
           controller.close();
 
-          log.info("ws http fallback complete", { id: body.id, model, latencyMs: Date.now() - start });
+          if (keyFingerprint) {
+            await usageLedger?.record({
+              keyFingerprint,
+              model,
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              totalTokens: usage.totalTokens,
+              timestamp: Date.now(),
+              status: "success",
+            });
+          }
+
+          log.info("ws http fallback complete", {
+            id: body.id,
+            model,
+            latencyMs: Date.now() - start,
+          });
         } catch (err) {
+          await releaseQuota();
           const message = err instanceof AllModelsFailedError ? err.message : "Internal error";
-          controller.enqueue(encoder.encode(sseEvent({ type: "error", id: body.id, error: message })));
+          controller.enqueue(
+            encoder.encode(sseEvent({ type: "error", id: body.id, error: message }))
+          );
           controller.close();
           log.error("ws http fallback error", { id: body.id, model, error: message });
         }
