@@ -93,6 +93,11 @@
       "types": "./src/cli/public.ts",
       "import": "./src/cli/public.ts",
       "default": "./src/cli/public.ts"
+    },
+    "./providers/registry": {
+      "types": "./src/providers/registry.ts",
+      "import": "./src/providers/registry.ts",
+      "default": "./src/providers/registry.ts"
     }
   },
   "files": [

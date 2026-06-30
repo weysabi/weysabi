@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { resolve, dirname } from "path";
 import type { ProviderConfig } from "../types";
+import { providerRegistry, envDiscoverableProviders } from "../providers/registry";
 
 export interface WeysabiConfig {
   providers: Record<string, ProviderConfig>;
@@ -58,17 +59,7 @@ export function resolveProviders(
     }
   }
 
-  const envProviders = [
-    "groq",
-    "openai",
-    "anthropic",
-    "google",
-    "mistral",
-    "nvidia",
-    "deepseek",
-    "together",
-    "openrouter",
-  ];
+  const envProviders = envDiscoverableProviders;
   for (const name of envProviders) {
     if (providers[name]) continue;
     const key = process.env[`${name.toUpperCase()}_API_KEY`];
@@ -94,19 +85,7 @@ export function statusIcon(ok: boolean): string {
 }
 
 export function providerLabel(name: string): string {
-  const labels: Record<string, string> = {
-    groq: "Groq",
-    openai: "OpenAI",
-    anthropic: "Anthropic",
-    google: "Google Gemini",
-    mistral: "Mistral AI",
-    nvidia: "NVIDIA",
-    deepseek: "DeepSeek",
-    together: "Together AI",
-    openrouter: "OpenRouter",
-    ollama: "Ollama",
-  };
-  return labels[name.toLowerCase()] ?? name;
+  return providerRegistry[name.toLowerCase()]?.label ?? name;
 }
 
 import { errorMessage } from "../index";
@@ -143,20 +122,7 @@ export async function testProvider(
   config: ProviderConfig,
   model?: string
 ): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
-  const defaultModels: Record<string, string> = {
-    groq: "groq/llama-3.1-8b-instant",
-    openai: "openai/gpt-4o-mini",
-    anthropic: "anthropic/claude-3-5-haiku-20241022",
-    google: "google/gemini-2.0-flash",
-    mistral: "mistral/mistral-small-latest",
-    nvidia: "nvidia/llama-3.1-8b-instruct",
-    deepseek: "deepseek/deepseek-chat",
-    together: "together/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    openrouter: "openrouter/meta-llama/llama-3.1-8b-instruct",
-    ollama: "ollama/llama3.2",
-  };
-
-  const testModel = model ?? defaultModels[name.toLowerCase()];
+  const testModel = model ?? providerRegistry[name.toLowerCase()]?.defaultModel;
 
   if (!testModel) {
     return { ok: false, latencyMs: 0, error: `No default model for ${name}` };

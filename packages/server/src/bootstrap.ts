@@ -1,17 +1,9 @@
 import { log } from "./logger";
+import { providerRegistry, envDiscoverableProviders } from "weysabi/providers/registry";
 
-const PROVIDER_ENV_VARS: Record<string, string> = {
-  openai: "WEYSABI_OPENAI_API_KEY",
-  groq: "WEYSABI_GROQ_API_KEY",
-  anthropic: "WEYSABI_ANTHROPIC_API_KEY",
-  google: "WEYSABI_GOOGLE_API_KEY",
-  mistral: "WEYSABI_MISTRAL_API_KEY",
-  deepseek: "WEYSABI_DEEPSEEK_API_KEY",
-  together: "WEYSABI_TOGETHER_API_KEY",
-  nvidia: "WEYSABI_NVIDIA_API_KEY",
-  openrouter: "WEYSABI_OPENROUTER_API_KEY",
-  ollama: "WEYSABI_OLLAMA_API_KEY",
-};
+const PROVIDER_ENV_VARS: Record<string, string> = Object.fromEntries(
+  envDiscoverableProviders.map((id) => [id, providerRegistry[id]!.serverEnvVar])
+);
 
 export function resolveProvidersFromEnv(): Record<string, { apiKey: string }> {
   const providers: Record<string, { apiKey: string }> = {};

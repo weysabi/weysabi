@@ -7,8 +7,21 @@ import {
   registerShutdownHandlers,
   providerNames,
 } from "./bootstrap";
+import { providerRegistry, providerIds } from "weysabi/providers/registry";
 
 const log = createModuleLogger("cli");
+
+// Build provider env var help lines from registry
+const providerHelpLines = providerIds
+  .map((id) => {
+    const info = providerRegistry[id]!;
+    const lines = [`  ${info.serverEnvVar.padEnd(30)} ${info.serverEnvHint}`];
+    for (const extra of info.extraServerEnvVars ?? []) {
+      lines.push(`  ${extra.var.padEnd(30)} ${extra.description}`);
+    }
+    return lines.join("\n");
+  })
+  .join("\n");
 
 const args = process.argv.slice(2);
 const portIdx = args.indexOf("--port") !== -1 ? args.indexOf("--port") : args.indexOf("-p");
@@ -29,16 +42,7 @@ OPTIONS
       --help         Show this help
 
 ENVIRONMENT
-  WEYSABI_OPENAI_API_KEY       OpenAI API key
-  WEYSABI_GROQ_API_KEY         Groq API key
-  WEYSABI_ANTHROPIC_API_KEY    Anthropic API key
-  WEYSABI_GOOGLE_API_KEY       Google AI API key
-  WEYSABI_MISTRAL_API_KEY      Mistral AI API key
-  WEYSABI_DEEPSEEK_API_KEY     DeepSeek API key
-  WEYSABI_TOGETHER_API_KEY     Together AI API key
-  WEYSABI_NVIDIA_API_KEY       NVIDIA API key
-  WEYSABI_OPENROUTER_API_KEY   OpenRouter API key
-  WEYSABI_OLLAMA_API_KEY       Ollama API key
+${providerHelpLines}
   WEYSABI_API_KEY              Admin API key (all scopes)
   WEYSABI_ADMIN_API_KEY        Dedicated key for /v1/admin endpoints
   WEYSABI_API_KEYS             Scoped keys: key:scope1,scope2;key2

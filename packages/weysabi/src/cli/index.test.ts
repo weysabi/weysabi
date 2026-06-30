@@ -19,6 +19,11 @@ describe("providerLabel", () => {
     expect(providerLabel("anthropic")).toBe("Anthropic");
     expect(providerLabel("google")).toBe("Google Gemini");
     expect(providerLabel("mistral")).toBe("Mistral AI");
+    expect(providerLabel("perplexity")).toBe("Perplexity");
+    expect(providerLabel("xai")).toBe("xAI");
+    expect(providerLabel("azure")).toBe("Azure OpenAI");
+    expect(providerLabel("cohere")).toBe("Cohere");
+    expect(providerLabel("bedrock")).toBe("Bedrock");
     expect(providerLabel("ollama")).toBe("Ollama");
   });
 

@@ -16,32 +16,29 @@ import { anthropicHandler } from "./providers/anthropic";
 import { googleHandler } from "./providers/google";
 import { mistralHandler } from "./providers/mistral";
 import { ollamaHandler } from "./providers/ollama";
+import { azureHandler } from "./providers/azure";
+import { cohereHandler } from "./providers/cohere";
+import { bedrockHandler } from "./providers/bedrock";
+import { providerRegistry } from "./providers/registry";
+
+const HANDLER_MAP: Record<string, ProviderHandler | undefined> = {
+  anthropic: anthropicHandler,
+  google: googleHandler,
+  mistral: mistralHandler,
+  ollama: ollamaHandler,
+  azure: azureHandler,
+  cohere: cohereHandler,
+  bedrock: bedrockHandler,
+};
 
 function noop(): void {}
 
-const DEFAULT_BASE_URLS: Record<string, string> = {
-  openai: "https://api.openai.com/v1",
-  groq: "https://api.groq.com/openai/v1",
-  anthropic: "https://api.anthropic.com",
-  google: "https://generativelanguage.googleapis.com",
-  mistral: "https://api.mistral.ai/v1",
-  deepseek: "https://api.deepseek.com/v1",
-  together: "https://api.together.xyz/v1",
-  nvidia: "https://integrate.api.nvidia.com/v1",
-  openrouter: "https://openrouter.ai/api/v1",
-  ollama: "http://localhost:11434",
-};
-
 function getDefaultBaseUrl(name: string): string {
-  return DEFAULT_BASE_URLS[name] ?? "https://api.openai.com/v1";
+  return providerRegistry[name]?.defaultBaseUrl ?? "https://api.openai.com/v1";
 }
 
 function getHandler(name: string): ProviderHandler {
-  if (name === "anthropic") return anthropicHandler;
-  if (name === "google") return googleHandler;
-  if (name === "mistral") return mistralHandler;
-  if (name === "ollama") return ollamaHandler;
-  return openaiHandler;
+  return HANDLER_MAP[name] ?? openaiHandler;
 }
 
 export class ProviderClient {
@@ -219,16 +216,31 @@ export class ProviderClient {
       ...params,
       stream: false,
     });
+    const serialized = JSON.stringify(body);
+    let finalUrl = url;
+    let finalHeaders = headers;
+    let finalBody = serialized;
+    if (this.handler.interceptRequest) {
+      const intercepted = await this.handler.interceptRequest({
+        url,
+        headers,
+        body: serialized,
+        modelId,
+      });
+      finalUrl = intercepted.url;
+      finalHeaders = intercepted.headers;
+      finalBody = intercepted.body;
+    }
 
     const controller = new AbortController();
     const timeout = this.timeout;
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(finalUrl, {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: finalHeaders,
+        body: finalBody,
         signal: controller.signal,
       });
 
@@ -345,6 +357,21 @@ export class ProviderClient {
       ...params,
       stream: true,
     });
+    const serialized = JSON.stringify(body);
+    let finalUrl = url;
+    let finalHeaders = headers;
+    let finalBody = serialized;
+    if (this.handler.interceptRequest) {
+      const intercepted = await this.handler.interceptRequest({
+        url,
+        headers,
+        body: serialized,
+        modelId,
+      });
+      finalUrl = intercepted.url;
+      finalHeaders = intercepted.headers;
+      finalBody = intercepted.body;
+    }
 
     const timeout = this.timeout;
     const controller = new AbortController();
@@ -354,10 +381,10 @@ export class ProviderClient {
       : controller.signal;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(finalUrl, {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: finalHeaders,
+        body: finalBody,
         signal,
       });
 

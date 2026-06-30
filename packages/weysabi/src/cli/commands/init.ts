@@ -2,32 +2,13 @@ import * as p from "@clack/prompts";
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { resolveProviders, saveConfig, type WeysabiConfig, providerLabel } from "../utils";
+import { providerRegistry, providerIds } from "../../providers/registry";
 
-const KNOWN_PROVIDERS = [
-  "groq",
-  "openai",
-  "anthropic",
-  "google",
-  "mistral",
-  "nvidia",
-  "deepseek",
-  "together",
-  "openrouter",
-  "ollama",
-] as const;
-
-const DEFAULT_MODELS: Record<string, string> = {
-  groq: "groq/llama-4-scout",
-  openai: "openai/gpt-4o-mini",
-  anthropic: "anthropic/claude-3-5-haiku-20241022",
-  google: "google/gemini-2.0-flash",
-  mistral: "mistral/mistral-small-latest",
-  nvidia: "nvidia/llama-3.1-8b-instruct",
-  deepseek: "deepseek/deepseek-chat",
-  together: "together/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-  openrouter: "openrouter/meta-llama/llama-3.1-8b-instruct",
-  ollama: "ollama/llama3.2",
-};
+// Both derived from the central registry
+const KNOWN_PROVIDERS = [...providerIds];
+const DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  providerIds.map((id) => [id, providerRegistry[id]!.defaultModel])
+);
 
 const EXAMPLE_PROMPT = {
   "classify.prompt.txt": `You are a support ticket classifier.

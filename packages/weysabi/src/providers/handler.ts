@@ -29,4 +29,25 @@ export interface ProviderHandler {
   parseStreamUsage(
     data: unknown
   ): { promptTokens: number; completionTokens: number; totalTokens: number } | null;
+
+  /**
+   * Optional async request interceptor for providers requiring request-level
+   * transformations (e.g. AWS SigV4 signing, body encryption).
+   * Called after buildBody + JSON serialization so the interceptor can hash
+   * or transform the payload. Return the full augmented request.
+   */
+  interceptRequest?: (params: InterceptRequestParams) => Promise<InterceptedRequest>;
+}
+
+export interface InterceptRequestParams {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  modelId: string;
+}
+
+export interface InterceptedRequest {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
 }

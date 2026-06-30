@@ -1,10 +1,26 @@
 import { createBeacon, ConfigValidationError } from "@joinremba/beacon";
 import type { Beacon } from "@joinremba/beacon";
 import { createModuleLogger } from "./logger";
+import { providerRegistry, providerIds } from "weysabi/providers/registry";
 
 const log = createModuleLogger("config");
 
 export function createServerConfig(): Beacon {
+  // Build provider API key env var entries from registry
+  const providerEnvVars: Record<string, Record<string, unknown>> = {};
+  for (const id of providerIds) {
+    const info = providerRegistry[id]!;
+    providerEnvVars[info.serverEnvVar] = { type: "string", required: false, secret: true };
+    for (const extra of info.extraServerEnvVars ?? []) {
+      providerEnvVars[extra.var] = {
+        type: extra.type,
+        required: extra.required,
+        secret: extra.secret,
+        description: extra.description,
+      };
+    }
+  }
+
   return createBeacon({
     WEYSABI_PORT: { type: "port", default: 3000, description: "HTTP listen port" },
     WEYSABI_HOST: { type: "string", default: "0.0.0.0", description: "HTTP listen host" },
@@ -59,16 +75,7 @@ export function createServerConfig(): Beacon {
       description:
         "Comma-separated alias=provider/model pairs (e.g. weysabi-fast=groq/llama-4-scout)",
     },
-    WEYSABI_OPENAI_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_GROQ_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_ANTHROPIC_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_GOOGLE_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_MISTRAL_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_DEEPSEEK_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_TOGETHER_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_NVIDIA_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_OPENROUTER_API_KEY: { type: "string", required: false, secret: true },
-    WEYSABI_OLLAMA_API_KEY: { type: "string", required: false, secret: true },
+    ...providerEnvVars,
     WEYSABI_STORAGE: {
       type: "string",
       required: false,
