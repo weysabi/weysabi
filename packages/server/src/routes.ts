@@ -100,6 +100,8 @@ const AdminUsageQuerySchema = z.object({
     .string()
     .regex(/^[a-f0-9]{64}$/u, "key must be a SHA-256 fingerprint")
     .optional(),
+  from: z.coerce.number().optional(),
+  to: z.coerce.number().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -297,7 +299,17 @@ export async function createRouter(
 
   if (options.adminApiKey) {
     app.get("/v1/admin/stats", async (c: Context) => {
-      const allStats = await usageLedger.stats();
+      const query = AdminUsageQuerySchema.parse({
+        key: c.req.query("key") || undefined,
+        from: c.req.query("from") || undefined,
+        to: c.req.query("to") || undefined,
+      });
+
+      const allStats = await usageLedger.stats({
+        keyFingerprint: query.key,
+        from: query.from,
+        to: query.to,
+      });
 
       return ok(c, {
         totalRequests: allStats.totalRequests,
@@ -310,16 +322,58 @@ export async function createRouter(
     app.get("/v1/admin/usage", async (c: Context) => {
       const query = AdminUsageQuerySchema.parse({
         key: c.req.query("key") || undefined,
+        from: c.req.query("from") || undefined,
+        to: c.req.query("to") || undefined,
         limit: c.req.query("limit") || undefined,
         offset: c.req.query("offset") || undefined,
       });
 
       const result = await usageLedger.query({
         keyFingerprint: query.key,
+        from: query.from,
+        to: query.to,
         limit: query.limit,
         offset: query.offset,
       });
       return ok(c, result);
+    });
+
+    app.get("/v1/admin/usage/trend", async (c: Context) => {
+      const query = AdminUsageQuerySchema.parse({
+        key: c.req.query("key") || undefined,
+        from: c.req.query("from") || undefined,
+        to: c.req.query("to") || undefined,
+      });
+
+      const daily = await usageLedger.dailyStats({
+        keyFingerprint: query.key,
+        from: query.from,
+        to: query.to,
+      });
+      return ok(c, daily);
+    });
+
+    app.get("/v1/admin/config", (c: Context) => {
+      const aliasList = getAliasesList(modelAliases);
+      return ok(c, {
+        providers: options.providers ?? [],
+        modelAliases: aliasList,
+        rateLimitRpm: rpm,
+        quota: quotaConfig
+          ? {
+              maxTokensPerMin: quotaConfig.maxTokensPerMin,
+              maxTokensPerDay: quotaConfig.maxTokensPerDay,
+            }
+          : null,
+        controlPlane: hasControlPlane
+          ? {
+              enabled: true,
+              storage: options.storage ?? "sqlite",
+            }
+          : { enabled: false },
+        responseCache: !!options.responseCache,
+        ragEnabled: !!options.ragConfig,
+      });
     });
   }
 

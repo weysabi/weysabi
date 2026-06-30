@@ -4,10 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, FolderKanban, ExternalLink } from "lucide-react";
+import { Pagination } from "@/components/pagination";
 import { useAdmin, slugFromName, errorMessage } from "@/lib/admin";
 
 export default function ProjectsPage() {
   const { projects, loading, error, refreshProjects, apiFetch, connected } = useAdmin();
+  const [page, setPage] = useState(1);
+  const limit = 12;
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -157,32 +160,39 @@ export default function ProjectsPage() {
       )}
 
       {projects.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <Link
-              key={project.id}
-              href={`/admin/projects/${project.id}`}
-              className="group rounded-xl border border-border bg-card p-5 transition-all hover:border-primary/30 hover:shadow-sm"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
-                    {project.name.charAt(0).toUpperCase()}
+        <div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.slice((page - 1) * limit, page * limit).map((project) => (
+              <Link
+                key={project.id}
+                href={`/admin/projects/${project.id}`}
+                className="group rounded-xl border border-border bg-card p-5 transition-all hover:border-primary/30 hover:shadow-sm"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
+                      {project.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold group-hover:text-primary transition-colors">
+                        {project.name}
+                      </h3>
+                      <p className="text-xs text-muted-foreground font-mono">{project.slug}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold group-hover:text-primary transition-colors">
-                      {project.name}
-                    </h3>
-                    <p className="text-xs text-muted-foreground font-mono">{project.slug}</p>
-                  </div>
+                  <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Created {new Date(project.createdAt).toLocaleDateString()}
-              </p>
-            </Link>
-          ))}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Created {new Date(project.createdAt).toLocaleDateString()}
+                </p>
+              </Link>
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            totalPages={Math.ceil(projects.length / limit)}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

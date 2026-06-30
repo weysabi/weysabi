@@ -17,6 +17,7 @@ export function registerApiKeyRoutes({ app, projects, store }: ControlRouteConte
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = ApiKeyQuerySchema.parse({
+      search: c.req.query("search") || undefined,
       limit: c.req.query("limit") || undefined,
       offset: c.req.query("offset") || undefined,
     });

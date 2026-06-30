@@ -363,8 +363,25 @@ class SqliteProjectStore implements ProjectStore {
   }
 
   async list(options?: Partial<PageOptions>): Promise<Page<Project>> {
+    const search = options?.search;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
+    if (search) {
+      const pattern = `%${search}%`;
+      const countRow = this.db
+        .query<
+          { count: number },
+          [string, string]
+        >("SELECT COUNT(*) as count FROM projects WHERE name LIKE ? OR slug LIKE ?")
+        .get(pattern, pattern)!;
+      const rows = this.db
+        .query<
+          ProjectRow,
+          [string, string, number, number]
+        >("SELECT * FROM projects WHERE name LIKE ? OR slug LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        .all(pattern, pattern, limit, offset);
+      return { items: rows.map(rowToProject), total: countRow.count };
+    }
     const countRow = this.db
       .query<{ count: number }, []>("SELECT COUNT(*) as count FROM projects")
       .get()!;
@@ -463,8 +480,25 @@ class SqlitePromptStore implements PromptStore {
     projectId: string,
     options?: Partial<PageOptions>
   ): Promise<Page<ManagedPrompt>> {
+    const search = options?.search;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
+    if (search) {
+      const pattern = `%${search}%`;
+      const countRow = this.db
+        .query<
+          { count: number },
+          [string, string, string]
+        >("SELECT COUNT(*) as count FROM prompts WHERE project_id = ? AND (name LIKE ? OR slug LIKE ?)")
+        .get(projectId, pattern, pattern)!;
+      const rows = this.db
+        .query<
+          PromptRow,
+          [string, string, string, number, number]
+        >("SELECT * FROM prompts WHERE project_id = ? AND (name LIKE ? OR slug LIKE ?) ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        .all(projectId, pattern, pattern, limit, offset);
+      return { items: rows.map(rowToPrompt), total: countRow.count };
+    }
     const countRow = this.db
       .query<
         { count: number },
@@ -694,6 +728,10 @@ class SqliteConversationStore implements ConversationStore {
     if (options?.status) {
       conditions.push("status = ?");
       params.push(options.status);
+    }
+    if (options?.search) {
+      conditions.push("title LIKE ?");
+      params.push(`%${options.search}%`);
     }
     const where = conditions.join(" AND ");
     const limit = options?.limit ?? 50;
@@ -1015,6 +1053,10 @@ class SqliteRunStore implements RunStore {
       conditions.push("status = ?");
       params.push(query.status);
     }
+    if (query?.search) {
+      conditions.push("requested_model LIKE ?");
+      params.push(`%${query.search}%`);
+    }
     const where = conditions.join(" AND ");
     const limit = query?.limit ?? 50;
     const offset = query?.offset ?? 0;
@@ -1138,6 +1180,10 @@ class SqliteDocumentStore implements DocumentStore {
       conditions.push("source_type = ?");
       params.push(options.sourceType);
     }
+    if (options?.search) {
+      conditions.push("name LIKE ?");
+      params.push(`%${options.search}%`);
+    }
     const where = conditions.join(" AND ");
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
@@ -1236,8 +1282,25 @@ class SqliteApiKeyStore implements ApiKeyStore {
   }
 
   async list(projectId: string, options?: ApiKeyQuery): Promise<Page<ProjectApiKey>> {
+    const search = options?.search;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
+    if (search) {
+      const pattern = `%${search}%`;
+      const countRow = this.db
+        .query<
+          { count: number },
+          [string, string]
+        >("SELECT COUNT(*) as count FROM project_api_keys WHERE project_id = ? AND name LIKE ?")
+        .get(projectId, pattern)!;
+      const rows = this.db
+        .query<
+          ApiKeyRow,
+          [string, string, number, number]
+        >("SELECT * FROM project_api_keys WHERE project_id = ? AND name LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        .all(projectId, pattern, limit, offset);
+      return { items: rows.map(rowToApiKey), total: countRow.count };
+    }
     const countRow = this.db
       .query<
         { count: number },

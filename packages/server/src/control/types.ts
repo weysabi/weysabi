@@ -3,11 +3,13 @@ import { z } from "zod";
 // ─── Pagination ────────────────────────────────────────────
 
 export const PageOptionsSchema = z.object({
+  search: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
 export interface PageOptions {
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -261,6 +263,7 @@ export const UpdateMessageInputSchema = z.object({
 export type UpdateMessageInput = z.infer<typeof UpdateMessageInputSchema>;
 
 export const ConversationQuerySchema = z.object({
+  search: z.string().optional(),
   externalUserId: z.string().optional(),
   status: z.enum(["active", "archived", "deleted"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -342,6 +345,7 @@ export const UpdateRunInputSchema = z.object({
 export type UpdateRunInput = z.infer<typeof UpdateRunInputSchema>;
 
 export const RunQuerySchema = z.object({
+  search: z.string().optional(),
   conversationId: z.string().optional(),
   promptId: z.string().optional(),
   status: z.enum(["pending", "streaming", "success", "failed", "interrupted"]).optional(),
@@ -397,6 +401,7 @@ export interface ManagedDocument {
 }
 
 export const DocumentQuerySchema = z.object({
+  search: z.string().optional(),
   status: z.enum(["pending", "indexing", "ready", "failed"]).optional(),
   sourceType: z.enum(["text", "file", "url"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -482,6 +487,7 @@ export const UpdateApiKeyInputSchema = z.object({
 export type UpdateApiKeyInput = z.infer<typeof UpdateApiKeyInputSchema>;
 
 export const ApiKeyQuerySchema = z.object({
+  search: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

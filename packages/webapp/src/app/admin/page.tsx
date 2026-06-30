@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BarChart3,
   Terminal,
   Globe,
-  Shield,
+  DollarSign,
   RefreshCw,
   Activity,
   KeyRound,
   Plug,
+  TrendingUp,
 } from "lucide-react";
 import { useAdmin, errorMessage } from "@/lib/admin";
 
@@ -31,8 +32,35 @@ interface UsageRecord {
   status: string;
 }
 
+interface DailyUsage {
+  date: string;
+  requests: number;
+  tokens: number;
+  costUsd: number;
+}
+
+type RangePreset = "24h" | "7d" | "30d" | "90d";
+
+const RANGE_LABELS: Record<RangePreset, string> = {
+  "24h": "24H",
+  "7d": "7 Days",
+  "30d": "30 Days",
+  "90d": "90 Days",
+};
+
+const RANGE_MS: Record<RangePreset, number> = {
+  "24h": 86_400_000,
+  "7d": 604_800_000,
+  "30d": 2_592_000_000,
+  "90d": 7_776_000_000,
+};
+
 function fmt(n: number): string {
   return n.toLocaleString();
+}
+
+function rangeParams(range: RangePreset): { from: number; to: number } {
+  return { from: Date.now() - RANGE_MS[range], to: Date.now() };
 }
 
 export default function AdminDashboard() {
@@ -42,48 +70,58 @@ export default function AdminDashboard() {
     records: UsageRecord[];
     total: number;
   } | null>(null);
+  const [trend, setTrend] = useState<DailyUsage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState<RangePreset>("7d");
+  const mountedRef = useRef(true);
 
   const fetchData = useCallback(async () => {
     if (!connected) return;
     setLoading(true);
     setError(null);
 
+    const { from, to } = rangeParams(range);
+    const qs = `?from=${from}&to=${to}`;
+
     try {
-      const [statsRes, usageRes] = await Promise.all([
-        (async () => {
-          const r = await apiFetch("/v1/admin/stats");
+      const [statsRes, usageRes, trendRes] = await Promise.all([
+        apiFetch(`/v1/admin/stats${qs}`).then((r) => {
           if (!r.ok) throw new Error(`Stats: ${r.status}`);
           return r.json() as Promise<Stats>;
-        })(),
-        (async () => {
-          const r = await apiFetch("/v1/admin/usage");
+        }),
+        apiFetch(`/v1/admin/usage${qs}`).then((r) => {
           if (!r.ok) throw new Error(`Usage: ${r.status}`);
-          return r.json() as Promise<{
-            records: UsageRecord[];
-            total: number;
-          }>;
-        })(),
+          return r.json() as Promise<{ records: UsageRecord[]; total: number }>;
+        }),
+        apiFetch(`/v1/admin/usage/trend${qs}`).then((r) => {
+          if (!r.ok) return [] as DailyUsage[];
+          return r.json() as Promise<DailyUsage[]>;
+        }),
       ]);
 
+      if (!mountedRef.current) return;
       setStats(statsRes);
       setUsage(usageRes);
+      setTrend(trendRes);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(errorMessage(err, "Connection failed"));
       setStats(null);
       setUsage(null);
+      setTrend([]);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
-  }, [apiFetch, connected]);
+  }, [apiFetch, connected, range]);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (connected) fetchData();
+    return () => {
+      mountedRef.current = false;
+    };
   }, [fetchData, connected]);
-
-  const statusColor = stats ? "text-green-500" : error ? "text-red-500" : "text-muted-foreground";
-  const statusLabel = stats ? "Connected" : error ? "Error" : "Disconnected";
 
   const keyBarData = useMemo(() => {
     if (!usage) return [];
@@ -102,32 +140,54 @@ export default function AdminDashboard() {
       }));
   }, [usage]);
 
+  const maxTrendTokens = useMemo(() => Math.max(...trend.map((d) => d.tokens), 1), [trend]);
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
-      <div className="flex items-center justify-between mb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Server-wide usage overview</p>
         </div>
         {connected && (
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm transition-all hover:bg-muted disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border bg-card p-0.5">
+              {(Object.keys(RANGE_LABELS) as RangePreset[]).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setRange(key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    range === key
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {RANGE_LABELS[key]}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm transition-all hover:bg-muted disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
         )}
       </div>
 
+      {/* Error */}
       {error && (
         <div className="mb-8 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-600 flex items-center gap-2">
-          <Shield className="h-4 w-4 shrink-0" />
+          <span className="text-red-600 font-bold shrink-0">!</span>
           {error}
         </div>
       )}
 
+      {/* Stats Cards */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-10">
         <StatCard
           icon={BarChart3}
@@ -148,14 +208,43 @@ export default function AdminDashboard() {
           delay={100}
         />
         <StatCard
-          icon={Shield}
-          label="Status"
-          value={statusLabel}
-          valueClass={statusColor}
+          icon={DollarSign}
+          label="Total Cost"
+          value={stats ? `$${stats.totalCostUsd.toFixed(4)}` : "—"}
           delay={150}
         />
       </div>
 
+      {/* Daily Trend Chart */}
+      {trend.length > 0 && (
+        <section className="mb-10 rounded-xl border border-border bg-card p-6">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Daily Token Usage
+          </h3>
+          <div className="flex items-end gap-1.5 h-32">
+            {trend.map((d) => (
+              <div
+                key={d.date}
+                className="flex-1 flex flex-col items-center justify-end h-full"
+                title={`${d.date}: ${fmt(d.tokens)} tokens (${fmt(d.requests)} requests)`}
+              >
+                <div
+                  className="w-full rounded-t-sm bg-primary/20 hover:bg-primary/30 transition-colors min-h-[4px]"
+                  style={{ height: `${(d.tokens / maxTrendTokens) * 100}%` }}
+                />
+                {trend.length <= 14 && (
+                  <span className="text-[10px] text-muted-foreground mt-1 truncate w-full text-center">
+                    {d.date.slice(5)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Top Keys */}
       {keyBarData.length > 0 && (
         <section className="mb-10 rounded-xl border border-border bg-card p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
@@ -183,6 +272,7 @@ export default function AdminDashboard() {
         </section>
       )}
 
+      {/* Recent Usage Table */}
       {usage && usage.records.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -261,6 +351,7 @@ export default function AdminDashboard() {
         </section>
       )}
 
+      {/* Not Connected */}
       {!connected && !stats && !error && (
         <section className="rounded-xl border border-border bg-card p-12 text-center">
           <Plug className="h-10 w-10 mx-auto mb-4 text-muted-foreground/50" />

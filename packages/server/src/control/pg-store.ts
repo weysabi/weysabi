@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { and, desc, eq, gte, inArray, lt, lte, or, sql, ne } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql, ne } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { type PostgresJsDatabase, drizzle } from "drizzle-orm/postgres-js";
@@ -129,6 +129,23 @@ class PgProjectStore implements ProjectStore {
   async list(options?: Partial<PageOptions>): Promise<Page<Project>> {
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
+    if (options?.search) {
+      const pattern = `%${options.search}%`;
+      const filter = or(ilike(projects.name, pattern), ilike(projects.slug, pattern));
+      const countRows = await this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(filter);
+      const total = countRows[0]?.count ?? 0;
+      const rows = await this.db
+        .select()
+        .from(projects)
+        .where(filter)
+        .orderBy(desc(projects.createdAt))
+        .limit(limit)
+        .offset(offset);
+      return { items: rows.map(rowToProject), total: Number(total) };
+    }
     const countRows = await this.db.select({ count: sql<number>`count(*)` }).from(projects);
     const total = countRows[0]?.count ?? 0;
     const rows = await this.db
@@ -233,17 +250,23 @@ class PgPromptStore implements PromptStore {
     projectId: string,
     options?: Partial<PageOptions>
   ): Promise<Page<ManagedPrompt>> {
+    const conditions: SQL[] = [eq(prompts.projectId, projectId)];
+    if (options?.search) {
+      const pattern = `%${options.search}%`;
+      conditions.push(or(ilike(prompts.name, pattern), ilike(prompts.slug, pattern)) as SQL);
+    }
+    const filter = and(...conditions);
     const limit = Number(options?.limit ?? 50);
     const offset = Number(options?.offset ?? 0);
     const countRows = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(prompts)
-      .where(eq(prompts.projectId, projectId));
+      .where(filter);
     const total = countRows[0]?.count ?? 0;
     const rows = await this.db
       .select()
       .from(prompts)
-      .where(eq(prompts.projectId, projectId))
+      .where(filter)
       .orderBy(desc(prompts.createdAt))
       .limit(limit)
       .offset(offset);
@@ -470,6 +493,10 @@ class PgConversationStore implements ConversationStore {
     }
     if (options?.status) {
       conditions.push(eq(conversations.status, options.status));
+    }
+    if (options?.search) {
+      const pattern = `%${options.search}%`;
+      conditions.push(ilike(conversations.title, pattern) as SQL);
     }
     const filter = and(...conditions);
     const limit = Number(options?.limit ?? 50);
@@ -855,6 +882,10 @@ class PgRunStore implements RunStore {
     if (query?.status) {
       conditions.push(eq(runs.status, query.status));
     }
+    if (query?.search) {
+      const pattern = `%${query.search}%`;
+      conditions.push(ilike(runs.requestedModel, pattern) as SQL);
+    }
     const filter = and(...conditions);
     const limit = Number(query?.limit ?? 50);
     const offset = Number(query?.offset ?? 0);
@@ -963,6 +994,10 @@ class PgDocumentStore implements DocumentStore {
     }
     if (options?.sourceType) {
       conditions.push(eq(documents.sourceType, options.sourceType));
+    }
+    if (options?.search) {
+      const pattern = `%${options.search}%`;
+      conditions.push(ilike(documents.name, pattern) as SQL);
     }
     const filter = and(...conditions);
     const limit = Number(options?.limit ?? 50);
@@ -1073,17 +1108,23 @@ class PgApiKeyStore implements ApiKeyStore {
   }
 
   async list(projectId: string, options?: ApiKeyQuery): Promise<Page<ProjectApiKey>> {
+    const conditions: SQL[] = [eq(projectApiKeys.projectId, projectId)];
+    if (options?.search) {
+      const pattern = `%${options.search}%`;
+      conditions.push(ilike(projectApiKeys.name, pattern) as SQL);
+    }
+    const filter = and(...conditions);
     const limit = Number(options?.limit ?? 50);
     const offset = Number(options?.offset ?? 0);
     const countRows = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(projectApiKeys)
-      .where(eq(projectApiKeys.projectId, projectId));
+      .where(filter);
     const total = countRows[0]?.count ?? 0;
     const rows = await this.db
       .select()
       .from(projectApiKeys)
-      .where(eq(projectApiKeys.projectId, projectId))
+      .where(filter)
       .orderBy(desc(projectApiKeys.createdAt))
       .limit(limit)
       .offset(offset);

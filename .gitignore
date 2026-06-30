@@ -11,3 +11,4 @@ logs/
 .weysabi/
 .source/
 *.hnsw.idx
+.slim/deepwork/

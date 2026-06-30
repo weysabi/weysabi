@@ -46,6 +46,7 @@ export function registerConversationRoutes({
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = ConversationQuerySchema.parse({
+      search: c.req.query("search") || undefined,
       externalUserId: c.req.query("externalUserId") || undefined,
       status: c.req.query("status") || undefined,
       limit: c.req.query("limit") || undefined,

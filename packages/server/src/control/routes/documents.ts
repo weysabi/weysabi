@@ -34,6 +34,7 @@ export function registerDocumentRoutes({
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = DocumentQuerySchema.parse({
+      search: c.req.query("search") || undefined,
       status: c.req.query("status") || undefined,
       sourceType: c.req.query("sourceType") || undefined,
       limit: c.req.query("limit") || undefined,

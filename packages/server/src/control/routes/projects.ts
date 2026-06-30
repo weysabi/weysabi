@@ -9,9 +9,10 @@ export function registerProjectRoutes({ app, projects }: ControlRouteContext): v
   });
 
   app.get("/v1/projects", async (c) => {
+    const search = c.req.query("search") || undefined;
     const limit = c.req.query("limit") || undefined;
     const offset = c.req.query("offset") || undefined;
-    const result = await projects.list({ limit, offset });
+    const result = await projects.list({ search, limit, offset });
     return c.json(result);
   });
 

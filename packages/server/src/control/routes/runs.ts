@@ -22,6 +22,7 @@ export function registerRunRoutes({ app, projects, store }: ControlRouteContext)
     const projectId = c.req.param("projectId");
     await requireProject(projects, projectId);
     const query = RunQuerySchema.parse({
+      search: c.req.query("search") || undefined,
       conversationId: c.req.query("conversationId") || undefined,
       promptId: c.req.query("promptId") || undefined,
       status: c.req.query("status") || undefined,

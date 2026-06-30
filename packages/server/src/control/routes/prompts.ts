@@ -30,9 +30,10 @@ export function registerPromptRoutes({
 
   app.get("/v1/projects/:projectId/prompts", async (c) => {
     const projectId = c.req.param("projectId");
+    const search = c.req.query("search") || undefined;
     const limit = c.req.query("limit") || undefined;
     const offset = c.req.query("offset") || undefined;
-    const result = await prompts.list(projectId, { limit, offset });
+    const result = await prompts.list(projectId, { search, limit, offset });
     return c.json(result);
   });
 

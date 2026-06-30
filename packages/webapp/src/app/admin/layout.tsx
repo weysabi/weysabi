@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   Plug,
+  Settings,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -16,7 +17,9 @@ import { AdminProvider, useAdmin } from "@/lib/admin";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/providers", label: "Providers", icon: Plug },
   { href: "/admin/projects", label: "Projects", icon: FolderKanban },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

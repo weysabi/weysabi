@@ -41,7 +41,7 @@ describe("Usage ledger", () => {
         status: "success",
       });
 
-      const stats = await ledger.stats("key-a");
+      const stats = await ledger.stats({ keyFingerprint: "key-a" });
       expect(stats.totalRequests).toBe(1);
       expect(stats.totalTokens).toBe(30);
       expect(stats.totalCostUsd).toBeCloseTo(0.001);
@@ -151,7 +151,7 @@ describe("Usage ledger", () => {
         status: "success",
       });
 
-      const stats = await ledger.stats("key-a");
+      const stats = await ledger.stats({ keyFingerprint: "key-a" });
       expect(stats.totalRequests).toBe(1);
       expect(stats.totalTokens).toBe(30);
       expect(stats.totalCostUsd).toBeCloseTo(0.001);

@@ -11,19 +11,31 @@ export interface UsageRecord {
   status: "success" | "error";
 }
 
+export interface DailyUsage {
+  date: string;
+  requests: number;
+  tokens: number;
+  costUsd: number;
+}
+
+export interface QueryOptions {
+  keyFingerprint?: string;
+  from?: number;
+  to?: number;
+  limit?: number;
+  offset?: number;
+}
+
 export interface UsageLedger {
   record(entry: UsageRecord): Promise<void>;
-  query(opts?: {
-    keyFingerprint?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ records: UsageRecord[]; total: number }>;
-  stats(keyFingerprint?: string): Promise<{
+  query(opts?: QueryOptions): Promise<{ records: UsageRecord[]; total: number }>;
+  stats(opts?: { keyFingerprint?: string; from?: number; to?: number }): Promise<{
     totalRequests: number;
     totalTokens: number;
     totalCostUsd: number;
     activeKeys: number;
   }>;
+  dailyStats(opts?: { keyFingerprint?: string; from?: number; to?: number }): Promise<DailyUsage[]>;
 }
 
 export class SqliteUsageLedger implements UsageLedger {
@@ -94,51 +106,51 @@ export class SqliteUsageLedger implements UsageLedger {
     );
   }
 
-  async query(opts?: {
-    keyFingerprint?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ records: UsageRecord[]; total: number }> {
+  async query(opts?: QueryOptions): Promise<{ records: UsageRecord[]; total: number }> {
     const limit = opts?.limit ?? 100;
     const offset = opts?.offset ?? 0;
-
     const cmp = opts?.keyFingerprint;
+    const from = opts?.from;
+    const to = opts?.to;
 
-    const countRow = cmp
-      ? (this.db
-          .query("SELECT COUNT(*) as cnt FROM usage_records WHERE key_fingerprint = ?")
-          .get(cmp) as { cnt: number })
-      : (this.db.query("SELECT COUNT(*) as cnt FROM usage_records").get() as { cnt: number });
+    const conditions: string[] = [];
+    const params: unknown[] = [];
 
-    const rows = cmp
-      ? (this.db
-          .query(
-            "SELECT key_fingerprint, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, timestamp, status FROM usage_records WHERE key_fingerprint = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-          )
-          .all(cmp, limit, offset) as Array<{
-          key_fingerprint: string;
-          model: string;
-          prompt_tokens: number;
-          completion_tokens: number;
-          total_tokens: number;
-          estimated_cost_usd: number | null;
-          timestamp: number;
-          status: string;
-        }>)
-      : (this.db
-          .query(
-            "SELECT key_fingerprint, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, timestamp, status FROM usage_records ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-          )
-          .all(limit, offset) as Array<{
-          key_fingerprint: string;
-          model: string;
-          prompt_tokens: number;
-          completion_tokens: number;
-          total_tokens: number;
-          estimated_cost_usd: number | null;
-          timestamp: number;
-          status: string;
-        }>);
+    if (cmp) {
+      conditions.push("key_fingerprint = ?");
+      params.push(cmp);
+    }
+    if (from != null) {
+      conditions.push("timestamp >= ?");
+      params.push(from);
+    }
+    if (to != null) {
+      conditions.push("timestamp <= ?");
+      params.push(to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const p = params as (string | number)[];
+
+    const countRow = this.db
+      .query(`SELECT COUNT(*) as cnt FROM usage_records ${where}`)
+      .get(...p) as { cnt: number };
+
+    const rows = this.db
+      .query(
+        `SELECT key_fingerprint, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, timestamp, status FROM usage_records ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+      )
+      .all(...p, limit, offset) as Array<{
+      key_fingerprint: string;
+      model: string;
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+      estimated_cost_usd: number | null;
+      timestamp: number;
+      status: string;
+    }>;
 
     const records: UsageRecord[] = rows.map((r) => ({
       keyFingerprint: r.key_fingerprint,
@@ -154,53 +166,100 @@ export class SqliteUsageLedger implements UsageLedger {
     return { records, total: countRow.cnt };
   }
 
-  async stats(keyFingerprint?: string): Promise<{
+  async stats(opts?: { keyFingerprint?: string; from?: number; to?: number }): Promise<{
     totalRequests: number;
     totalTokens: number;
     totalCostUsd: number;
     activeKeys: number;
   }> {
-    if (keyFingerprint) {
-      const row = this.db
-        .query(
-          "SELECT COUNT(*) as total_requests, COALESCE(SUM(total_tokens), 0) as total_tokens, COALESCE(SUM(estimated_cost_usd), 0) as total_cost_usd FROM usage_records WHERE key_fingerprint = ?"
-        )
-        .get(keyFingerprint) as {
-        total_requests: number;
-        total_tokens: number;
-        total_cost_usd: number;
-      };
-      const keysRow = this.db
-        .query(
-          "SELECT COUNT(DISTINCT key_fingerprint) as active_keys FROM usage_records WHERE key_fingerprint = ?"
-        )
-        .get(keyFingerprint) as { active_keys: number };
-      return {
-        totalRequests: row.total_requests,
-        totalTokens: row.total_tokens,
-        totalCostUsd: row.total_cost_usd,
-        activeKeys: keysRow.active_keys,
-      };
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (opts?.keyFingerprint) {
+      conditions.push("key_fingerprint = ?");
+      params.push(opts.keyFingerprint);
     }
+    if (opts?.from != null) {
+      conditions.push("timestamp >= ?");
+      params.push(opts.from);
+    }
+    if (opts?.to != null) {
+      conditions.push("timestamp <= ?");
+      params.push(opts.to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const p = params as (string | number)[];
 
     const row = this.db
       .query(
-        "SELECT COUNT(*) as total_requests, COALESCE(SUM(total_tokens), 0) as total_tokens, COALESCE(SUM(estimated_cost_usd), 0) as total_cost_usd FROM usage_records"
+        `SELECT COUNT(*) as total_requests, COALESCE(SUM(total_tokens), 0) as total_tokens, COALESCE(SUM(estimated_cost_usd), 0) as total_cost_usd FROM usage_records ${where}`
       )
-      .get() as {
+      .get(...p) as {
       total_requests: number;
       total_tokens: number;
       total_cost_usd: number;
     };
+
+    const keyConditions = opts?.keyFingerprint ? "WHERE key_fingerprint = ?" : "";
+    const keyParams = opts?.keyFingerprint ? [opts.keyFingerprint] : [];
     const keysRow = this.db
-      .query("SELECT COUNT(DISTINCT key_fingerprint) as active_keys FROM usage_records")
-      .get() as { active_keys: number };
+      .query(
+        `SELECT COUNT(DISTINCT key_fingerprint) as active_keys FROM usage_records ${keyConditions}`
+      )
+      .get(...keyParams) as { active_keys: number };
+
     return {
       totalRequests: row.total_requests,
       totalTokens: row.total_tokens,
       totalCostUsd: row.total_cost_usd,
       activeKeys: keysRow.active_keys,
     };
+  }
+
+  async dailyStats(opts?: {
+    keyFingerprint?: string;
+    from?: number;
+    to?: number;
+  }): Promise<DailyUsage[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (opts?.keyFingerprint) {
+      conditions.push("key_fingerprint = ?");
+      params.push(opts.keyFingerprint);
+    }
+    if (opts?.from != null) {
+      conditions.push("timestamp >= ?");
+      params.push(opts.from);
+    }
+    if (opts?.to != null) {
+      conditions.push("timestamp <= ?");
+      params.push(opts.to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const p = params as (string | number)[];
+
+    const rows = this.db
+      .query(
+        `SELECT date(timestamp / 1000, 'unixepoch') as day, COUNT(*) as requests, COALESCE(SUM(total_tokens), 0) as tokens, COALESCE(SUM(estimated_cost_usd), 0) as cost_usd FROM usage_records ${where} GROUP BY day ORDER BY day ASC`
+      )
+      .all(...p) as Array<{
+      day: string;
+      requests: number;
+      tokens: number;
+      cost_usd: number;
+    }>;
+
+    return rows.map((r) => ({
+      date: r.day,
+      requests: r.requests,
+      tokens: r.tokens,
+      costUsd: r.cost_usd,
+    }));
   }
 
   close(): void {
@@ -225,14 +284,16 @@ export class InMemoryUsageLedger implements UsageLedger {
     }
   }
 
-  async query(opts?: {
-    keyFingerprint?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ records: UsageRecord[]; total: number }> {
+  async query(opts?: QueryOptions): Promise<{ records: UsageRecord[]; total: number }> {
     let filtered = this.records;
     if (opts?.keyFingerprint) {
       filtered = filtered.filter((r) => r.keyFingerprint === opts.keyFingerprint);
+    }
+    if (opts?.from != null) {
+      filtered = filtered.filter((r) => r.timestamp >= opts.from!);
+    }
+    if (opts?.to != null) {
+      filtered = filtered.filter((r) => r.timestamp <= opts.to!);
     }
     const ordered = [...filtered].sort((a, b) => b.timestamp - a.timestamp);
     const total = ordered.length;
@@ -242,15 +303,21 @@ export class InMemoryUsageLedger implements UsageLedger {
     return { records, total };
   }
 
-  async stats(keyFingerprint?: string): Promise<{
+  async stats(opts?: { keyFingerprint?: string; from?: number; to?: number }): Promise<{
     totalRequests: number;
     totalTokens: number;
     totalCostUsd: number;
     activeKeys: number;
   }> {
     let filtered = this.records;
-    if (keyFingerprint) {
-      filtered = filtered.filter((r) => r.keyFingerprint === keyFingerprint);
+    if (opts?.keyFingerprint) {
+      filtered = filtered.filter((r) => r.keyFingerprint === opts.keyFingerprint);
+    }
+    if (opts?.from != null) {
+      filtered = filtered.filter((r) => r.timestamp >= opts.from!);
+    }
+    if (opts?.to != null) {
+      filtered = filtered.filter((r) => r.timestamp <= opts.to!);
     }
     return {
       totalRequests: filtered.length,
@@ -258,5 +325,41 @@ export class InMemoryUsageLedger implements UsageLedger {
       totalCostUsd: filtered.reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0),
       activeKeys: new Set(filtered.map((record) => record.keyFingerprint)).size,
     };
+  }
+
+  async dailyStats(opts?: {
+    keyFingerprint?: string;
+    from?: number;
+    to?: number;
+  }): Promise<DailyUsage[]> {
+    let filtered = this.records;
+    if (opts?.keyFingerprint) {
+      filtered = filtered.filter((r) => r.keyFingerprint === opts.keyFingerprint);
+    }
+    if (opts?.from != null) {
+      filtered = filtered.filter((r) => r.timestamp >= opts.from!);
+    }
+    if (opts?.to != null) {
+      filtered = filtered.filter((r) => r.timestamp <= opts.to!);
+    }
+
+    const dayBuckets = new Map<string, { requests: number; tokens: number; costUsd: number }>();
+    for (const r of filtered) {
+      const day = new Date(r.timestamp).toISOString().slice(0, 10);
+      const bucket = dayBuckets.get(day) ?? { requests: 0, tokens: 0, costUsd: 0 };
+      bucket.requests++;
+      bucket.tokens += r.totalTokens;
+      bucket.costUsd += r.estimatedCostUsd ?? 0;
+      dayBuckets.set(day, bucket);
+    }
+
+    return Array.from(dayBuckets.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, stats]) => ({
+        date,
+        requests: stats.requests,
+        tokens: stats.tokens,
+        costUsd: stats.costUsd,
+      }));
   }
 }
